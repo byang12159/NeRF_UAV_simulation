@@ -121,15 +121,15 @@ class Run():
         particles_position_before_update = np.copy(self.filter.particles['position'])
         particles_rotation_before_update = [gtsam.Rot3(i.matrix()) for i in self.filter.particles['rotation']]
 
-        if self.use_convergence_protection:
-            for i in range(self.number_convergence_particles):
-                t_x = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-                t_y = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-                t_z = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-                # TODO this is not thread safe. have two lines because we need to both update
-                # particles to check the loss and the actual locations of the particles
-                self.filter.particles["position"][i] = self.filter.particles["position"][i] + np.array([t_x, t_y, t_z])
-                particles_position_before_update[i] = particles_position_before_update[i] + np.array([t_x, t_y, t_z])
+        # if self.use_convergence_protection:
+        #     for i in range(self.number_convergence_particles):
+        #         t_x = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
+        #         t_y = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
+        #         t_z = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
+        #         # TODO this is not thread safe. have two lines because we need to both update
+        #         # particles to check the loss and the actual locations of the particles
+        #         self.filter.particles["position"][i] = self.filter.particles["position"][i] + np.array([t_x, t_y, t_z])
+        #         particles_position_before_update[i] = particles_position_before_update[i] + np.array([t_x, t_y, t_z])
 
         
         # resize input image so it matches the scale that NeRF expects
@@ -144,9 +144,9 @@ class Run():
 
         total_nerf_time = 0
 
-        if self.sampling_strategy == 'random':
-            rand_inds = np.random.choice(self.nerf.coords.shape[0], size=self.nerf.batch_size, replace=False)
-            batch = self.nerf.coords[rand_inds]
+        # if self.sampling_strategy == 'random':
+        rand_inds = np.random.choice(self.nerf.coords.shape[0], size=self.nerf.batch_size, replace=False)
+        batch = self.nerf.coords[rand_inds]
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
@@ -210,11 +210,6 @@ if __name__ == "__main__":
 
     # Initialize Drone Position
     drone_state = [[0,0,0,0,0,0]]
-
-    # drone_view_img = cv2.imread("nerf_screenshot.png")
-    # cv2.imshow("test",drone_view_img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
 
     # Assume constant time step between trajectory stepping
     for iter in range(len(mcl.cam_states)):
