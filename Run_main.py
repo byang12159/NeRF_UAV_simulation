@@ -5,11 +5,11 @@ import gtsam
 import matplotlib.pyplot as plt
 import time
 import json
-
+from mpl_toolkits.mplot3d import Axes3D
 from particle_filter import ParticleFilter
 from utils import get_pose
 from full_filter import NeRF
-
+# from nerf_image import Nerf_image
 from controller import Controller
 
 # update step:
@@ -19,9 +19,13 @@ from controller import Controller
 # this is called in nav_mode.py in rgb_run()
 
 class Run():
-    def __init__(self, camera_path):
+    def __init__(self, camera_path, nerf_file_path):
 
-        # Import camera path json file with information about camera
+        # self.nerfimage = Nerf_image(nerf_file_path)
+    
+
+
+        ####################### Import camera path trajectory json #######################
         with open(camera_path, 'r') as file:
             data = json.load(file)
 
@@ -37,6 +41,7 @@ class Run():
 
         print("Finish importing camera states")
 
+        ####################### Initialize Variables #######################
 
         # bounds for particle initialization, meters + degrees
         self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
@@ -63,27 +68,47 @@ class Run():
 
         self.view_debug_image_iteration = 0 #view NeRF rendered image at estimated pose after number of iterations (set to 0 to disable)
 
+        ####################### Generate Initial Particles #######################
         self.get_initial_distribution()
 
         # add initial pose estimate before 1st update step
-        position_est = self.filter.compute_weighted_position_average()
-        rot_est = self.filter.compute_simple_rotation_average()
-        # TODO: issue with Pose3
+        # position_est = self.filter.compute_weighted_position_average()
+        # rot_est = self.filter.compute_simple_rotation_average()
+        # # TODO: issue with Pose3
         # pose_est = gtsam.Pose3(rot_est, position_est).matrix()
         # self.all_pose_est.append(pose_est)
         
+    def mat3d(self, x,y,z):
+        # Create a 3D figure
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+
+        ax.scatter(x,y,z,'*')
+        ax.set_xlabel('X Label')
+        ax.set_ylabel('Y Label')
+        ax.set_zlabel('Z Label')
+        ax.set_xlim(-5, 30)  # Set X-axis limits
+        ax.set_ylim(-5, 30)  # Set Y-axis limits
+        ax.set_zlim(-5, 30)  # Set Z-axis limits
+        # Show the plot
+        plt.show()
+
     def get_initial_distribution(self):
         # NOTE for now assuming everything stays in NeRF coordinates (x right, y up, z inward)
 
-        # get distribution of particles from user
+        # get distribution of particles from user, generate np.array of (num_particles, 6)
         self.initial_particles_noise = np.random.uniform(np.array(
             [self.min_bounds['px'], self.min_bounds['py'], self.min_bounds['pz'], self.min_bounds['rz'], self.min_bounds['ry'], self.min_bounds['rx']]),
             np.array([self.max_bounds['px'], self.max_bounds['py'], self.max_bounds['pz'], self.max_bounds['rz'], self.max_bounds['ry'], self.max_bounds['rx']]),
             size = (self.num_particles, 6))
 
+        # Dict of position + rotation, with position as np.array(300x6)
         self.initial_particles = self.set_initial_particles()
+        # self.mat3d(self.initial_particles.get('position')[:,0],self.initial_particles.get('position')[:,1],self.initial_particles.get('position')[:,2])
+
+        # Initiailize particle filter class with inital particles
         self.filter = ParticleFilter(self.initial_particles)
-        # print(self.initial_particles)
+
 
     def set_initial_particles(self):
         initial_positions = np.zeros((self.num_particles, 3))
@@ -101,16 +126,44 @@ class Run():
             
             # set positions
             initial_positions[index,:] = [particle_pose[0,3], particle_pose[1,3], particle_pose[2,3]]
+
             # set orientations
             rots.append(gtsam.Rot3(particle_pose[0:3,0:3]))
             # print(initial_particles)
 
         return {'position':initial_positions, 'rotation':np.array(rots)}
 
+    
+
     def move(self, x0=np.zeros(12), goal=np.zeros(12), dt=0.1):
         # integrate dynamics
         movement = self.control.simulate(x0, goal, dt)
         pass
+
+    def publish_pose_est(self, pose_est_gtsam, img_timestamp = None):
+        pose_est = self.move()
+        pose_est.header.frame_id = "world"
+
+        # if we don't run on rosbag data then we don't have timestamps
+        if img_timestamp is not None:
+            pose_est.header.stamp = img_timestamp
+
+        pose_est_gtsam = gtsam.Pose3(pose_est_gtsam)
+        position_est = pose_est_gtsam.translation()
+        rot_est = pose_est_gtsam.rotation().quaternion()
+
+        # populate msg with pose information
+        pose_est.pose.pose.position.x = position_est[0]
+        pose_est.pose.pose.position.y = position_est[1]
+        pose_est.pose.pose.position.z = position_est[2]
+        pose_est.pose.pose.orientation.w = rot_est[0]
+        pose_est.pose.pose.orientation.x = rot_est[1]
+        pose_est.pose.pose.orientation.y = rot_est[2]
+        pose_est.pose.pose.orientation.z = rot_est[3]
+        # print(pose_est_gtsam.rotation().ypr())
+
+        # publish pose
+        self.pose_pub.publish(pose_est)
 
     def rgb_run(self, img,msg=None, get_rays_fn=None, render_full_image=False):
         print("processing image")
@@ -145,8 +198,10 @@ class Run():
         total_nerf_time = 0
 
         # if self.sampling_strategy == 'random':
+        # From the meshgrid of image, find Batch# of points to randomly sample and compare, list of 2d coordinates
         rand_inds = np.random.choice(self.nerf.coords.shape[0], size=self.nerf.batch_size, replace=False)
         batch = self.nerf.coords[rand_inds]
+        print("BATCH $$$$$$$$$$$",batch)
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
@@ -156,8 +211,8 @@ class Run():
             loss_pose[0:3,3] = particle[0:3]
             loss_pose[3,3] = 1.0
             loss_poses.append(loss_pose)
-        losses, nerf_time = self.nerf.get_loss(loss_poses, batch)
-   
+        losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img)
+    
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/losses[index]
         total_nerf_time += nerf_time
@@ -165,8 +220,6 @@ class Run():
         # Resample Weights
         self.filter.update()
         self.num_updates += 1
-        print("UPDATE STEP NUMBER", self.num_updates, "RAN")
-        print("number particles:", self.num_particles)
 
         avg_pose = self.filter.compute_weighted_position_average()
         avg_rot = self.filter.compute_simple_rotation_average()
@@ -178,23 +231,12 @@ class Run():
         position_est = self.filter.compute_weighted_position_average()
         rot_est = self.filter.compute_simple_rotation_average()
         pose_est = gtsam.Pose3(rot_est, position_est).matrix()
-
-        if self.log_results:
-            self.all_pose_est.append(pose_est)
         
-        if not self.run_inerf_compare:
-            img_timestamp = msg.header.stamp
-            self.publish_pose_est(pose_est, img_timestamp)
-        else:
-            self.publish_pose_est(pose_est)
-    
+        # Update odometry step
+        self.publish_pose_est(pose_est)
+
         update_time = time.time() - start_time
         print("forward passes took:", total_nerf_time, "out of total", update_time, "for update step")
-
-        if not self.run_predicts:
-            self.filter.predict_no_motion(self.px_noise, self.py_noise, self.pz_noise, self.rot_x_noise, self.rot_y_noise, self.rot_z_noise) #  used if you want to localize a static image
-        
-        
 
         # return is just for logging
         return pose_est
@@ -205,18 +247,18 @@ if __name__ == "__main__":
 
     camera_path = 'camera_path-2.json'
 
-    mcl = Run(camera_path)      
-    # Initializes particles in get_initial_distribution()
+    nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
+
+    mcl = Run(camera_path,nerf_file_path)      
+
 
     # Initialize Drone Position
     drone_state = [[0,0,0,0,0,0]]
 
     # Assume constant time step between trajectory stepping
     for iter in range(len(mcl.cam_states)):
-        # MCL: Prediction Step
-        mcl.move()
-
-        # MCL: Update and Resample Steps
+        # MCL: Update, Resample Steps, and Move
         mcl.rgb_run(mcl.cam_states[iter])
+        
 
     print("########################Done########################")

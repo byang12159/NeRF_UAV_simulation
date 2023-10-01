@@ -8,6 +8,7 @@ from utils import show_img, find_POI, img2mse, load_llff_data, get_pose
 from full_nerf_helpers import load_nerf
 from render_helpers import render, to8b, get_rays
 from particle_filter import ParticleFilter
+# from nerf_image import Nerf_image
 
 from scipy.spatial.transform import Rotation as R
 
@@ -25,7 +26,7 @@ class NeRF:
         # self.data_dir = nerf_params['data_dir']
         # self.model_name = nerf_params['model_name']
         # self.obs_img_num = nerf_params['obs_img_num']
-        self.batch_size = 32
+        self.batch_size = 32 # number of pixels to use for measurement points
         self.factor = 4 # image down-sample factor
         self.focal = 635
         self.H = 720
@@ -79,42 +80,28 @@ class NeRF:
         if sampling_type == 'random':
             self.coords = self.coords.reshape(self.H * self.W, 2)
 
-    def get_loss(self, particles, batch):
+    def get_loss(self, particles, batch, base_img):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
+        losses = []
 
         start_time = time.time()
-        num_pixels = len(particles) * len(batch)
-        all_rays_o = np.zeros((num_pixels,3))
-        all_rays_d = np.zeros((num_pixels,3))
+
         for i, particle in enumerate(particles):
-            pose = torch.Tensor(particle).to(device)
+            #TODO: Potentially speed up render process by only generating specific rays, check locNerf
+            yaw = 0
+            compare_img = Nerf_image.render_Nerf_image(yaw)
+            compare_img_points = compare_img[batch[:,0],batch[:,1]]
+            compare_tensor = torch.tensor(compare_img_points)
 
-            rays_o, rays_d = get_rays(self.H, self.W, self.focal, pose) # TODO this line can be stored as a param
-            rays_o = rays_o[batch[:, 1], batch[:, 0]]
-            rays_d = rays_d[batch[:, 1], batch[:, 0]]
-            all_rays_o[i*len(batch): i*len(batch) + len(batch),:] = rays_o.cpu().detach().numpy()
-            all_rays_d[i*len(batch): i*len(batch) + len(batch),:] = rays_d.cpu().detach().numpy()
+            base_img_points = base_img[batch[:,0],batch[:,1]]
+            base_tensor = torch.tensor(base_img_points)
 
-        all_rays_o = torch.Tensor(all_rays_o).to(device)
-        all_rays_d = torch.Tensor(all_rays_d).to(device)
-        batch_rays = torch.stack([all_rays_o, all_rays_d], 0)
-        rgb_all, disp, acc, extras = render(self.H, self.W, self.focal, chunk=self.chunk, rays=batch_rays,
-                                        retraw=True,
-                                        **self.render_kwargs)
+            loss = img2mse(base_tensor,compare_tensor)
+            losses.append(loss.item())
+      
         nerf_time = time.time() - start_time
                    
-        # print(rgb_all)
-        # print()
-        # print(target_s)
-
-        losses = []
-        for i in range(len(particles)):
-            rgb = rgb_all[i*len(batch): i*len(batch) + len(batch)]
-            
-            loss = img2mse(rgb, target_s)
-
-            losses.append(loss.item())
         return losses, nerf_time
     
     def visualize_nerf_image(self, nerf_pose):

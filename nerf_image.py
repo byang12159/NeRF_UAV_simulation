@@ -21,7 +21,7 @@ class Nerf_image:
         script_dir = os.path.dirname(os.path.realpath(__file__))
 
         # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-        config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
+        config_fn = os.path.join(self.path)
         # config_fn = os.path.join(self.path)
         config_path = Path(config_fn)
         _, pipeline, _, step = eval_setup(
@@ -35,12 +35,11 @@ class Nerf_image:
         self.fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
         self.cx = 160.0
         self.cy = 160.0
-        self.width = 320
-        self.height = 320
+        self.nerfW = 320
+        self.nerfH = 320
         self.camera_type  = CameraType.PERSPECTIVE
         
-
-    def render_Nerf_image(self,camera_to_world):
+    def render_Nerf_image(self, camera_to_world):
 
             camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.width, height=self.height, camera_type=self.camera_type)
             camera = camera.to('cuda')
@@ -58,19 +57,6 @@ class Nerf_image:
 if __name__ == "__main__":
     
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    # fn = os.path.join(script_dir, '../data/IRL2/transforms.json')
-    # with open(fn,'r') as f:
-    #     data = json.load(f)
-    # transforms = []
-    # frames = data['frames']
-    # for frame in frames:
-    #     transform_matrix = frame['transform_matrix']
-    #     tmp = np.array(transform_matrix)[:3,:]
-    #     transforms.append(tmp)
-    # transforms = np.array(transforms)
-    # print(transforms.shape)
-    # transforms_tensor = torch.FloatTensor(transforms)
-    # scene_box = SceneBox.from_camera_poses(transforms_tensor, 1)
 
     # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
     config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
@@ -80,14 +66,8 @@ if __name__ == "__main__":
         eval_num_rays_per_chunk=None,
         test_mode='inference'
     )
-    # config = yaml.load(config_path.read_text(), Loader=yaml.Loader)
-    # pipeline = config.pipeline.setup(device='cuda', test_mode='test')
+
     model = pipeline.model
-    # scene_box = SceneBox(aabb=torch.FloatTensor([[-1.,-1.,-1.],[1.,1.,1.]]))
-    # model = config.pipeline.model.setup(
-    #     scene_box = scene_box,
-    #     num_train_data = 0,
-    # ).to('cuda')
     
     f = open('camera_path.json')
 
@@ -117,34 +97,6 @@ if __name__ == "__main__":
 
         camera_to_world = torch.FloatTensor([ camera_to_world ])
         
-        
-       
-
-        #camera_to_world = torch.FloatTensor([
-        #   [ 6.6384e-01, -1.2349e-01,  7.3761e-01,  6.1554e-01],
-        #    [ 7.4787e-01,  1.0962e-01, -6.5473e-01, -5.5424e-01],
-        #    [ 6.9389e-17,  9.8627e-01,  1.6512e-01, -9.1273e-03]
-        #])
-        # camera_to_world = torch.FloatTensor([
-        #     [
-        #         0.012817036360502243,
-        #         0.19525104761123657,
-        #         -0.9806695580482483,
-        #         -0.07062844187021255
-        #     ],
-        #     [
-        #         0.9997958540916443,
-        #         0.012817036360502243,
-        #         0.015618880279362202,
-        #         -0.027591701596975327
-        #     ],
-        #     [
-        #         0.015618880279362202,
-        #         -0.9806695580482483,
-        #         -0.19504690170288086,
-        #         -0.001556280069053173
-        #     ]
-        # ])
         fx = fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
         cx = cy = 160.0
         width = height = 320
