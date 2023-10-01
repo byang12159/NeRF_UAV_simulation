@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import time
-import gtsam
+
 import matplotlib.pyplot as plt
 import time
 import json
@@ -9,8 +9,9 @@ from mpl_toolkits.mplot3d import Axes3D
 from particle_filter import ParticleFilter
 from utils import get_pose
 from full_filter import NeRF
-# from nerf_image import Nerf_image
+from nerf_image import Nerf_image
 from controller import Controller
+from scipy.spatial.transform import Rotation as R
 
 # update step:
 
@@ -72,11 +73,12 @@ class Run():
         self.get_initial_distribution()
 
         # add initial pose estimate before 1st update step
-        # position_est = self.filter.compute_weighted_position_average()
-        # rot_est = self.filter.compute_simple_rotation_average()
-        # # TODO: issue with Pose3
-        # pose_est = gtsam.Pose3(rot_est, position_est).matrix()
-        # self.all_pose_est.append(pose_est)
+        position_est = self.filter.compute_weighted_position_average()
+        rot_est = self.filter.compute_simple_rotation_average()
+        pose_est = np.eye(4)  # Initialize as identity matrix
+        pose_est[:3, :3] = rot_est  # Set the upper-left 3x3 submatrix as the rotation matrix
+        pose_est[:3, 3] = position_est  # Set the rightmost column as the translation vector
+        self.all_pose_est.append(pose_est)
         
     def mat3d(self, x,y,z):
         # Create a 3D figure
@@ -127,8 +129,9 @@ class Run():
             # set positions
             initial_positions[index,:] = [particle_pose[0,3], particle_pose[1,3], particle_pose[2,3]]
 
-            # set orientations
-            rots.append(gtsam.Rot3(particle_pose[0:3,0:3]))
+            # set orientations, create rotation object
+            rots.append(R.from_matrix(particle_pose[0:3,0:3]))
+            
             # print(initial_particles)
 
         return {'position':initial_positions, 'rotation':np.array(rots)}
@@ -140,7 +143,7 @@ class Run():
         movement = self.control.simulate(x0, goal, dt)
         pass
 
-    def publish_pose_est(self, pose_est_gtsam, img_timestamp = None):
+    def publish_pose_est(self, pose_est, img_timestamp = None):
         pose_est = self.move()
         pose_est.header.frame_id = "world"
 
@@ -148,9 +151,9 @@ class Run():
         if img_timestamp is not None:
             pose_est.header.stamp = img_timestamp
 
-        pose_est_gtsam = gtsam.Pose3(pose_est_gtsam)
-        position_est = pose_est_gtsam.translation()
-        rot_est = pose_est_gtsam.rotation().quaternion()
+
+        position_est = pose_est[:3, 3]
+        rot_est = R.as_quat(pose_est[:3, :3])
 
         # populate msg with pose information
         pose_est.pose.pose.position.x = position_est[0]
