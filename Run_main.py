@@ -212,19 +212,20 @@ class Run():
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
+            # print(index)
             loss_pose = np.zeros((4,4))
             rot = particles_rotation_before_update[index]
             loss_pose[0:3, 0:3] = rot
             loss_pose[0:3,3] = particle[0:3]
             loss_pose[3,3] = 1.0
             loss_poses.append(loss_pose)
-            break
+            # break
         
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img)
         print("Pass losses")
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/losses[index]
-            break
+            # break
         total_nerf_time += nerf_time
 
         # Resample Weights
@@ -239,7 +240,7 @@ class Run():
         self.all_pose_est.append(pose_est)
         
         # Update odometry step
-        # self.publish_pose_est(pose_est)
+        self.publish_pose_est(pose_est)
 
         update_time = time.time() - start_time
         print("forward passes took:", total_nerf_time, "out of total", update_time, "for update step")
@@ -254,7 +255,7 @@ if __name__ == "__main__":
 
     camera_path = 'camera_path.json'
 
-    nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
+    nerf_file_path = '/home/younger/work/nerfstudio/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
 
     mcl = Run(camera_path,nerf_file_path)      
 
@@ -267,7 +268,10 @@ if __name__ == "__main__":
         # MCL: Update, Resample Steps, and Move
         base_img = cv2.imread("./NeRF_UAV_simulation/images/foo{}.png".format(iter))
 
-        mcl.rgb_run(base_img)
-        
+        pose_est = mcl.rgb_run(base_img)
+
+        print(">>>>>>>>>>>>>> ")
+        print(mcl.cam_states[iter])
+        print(pose_est)
 
     print("########################Done########################")

@@ -117,17 +117,15 @@ class NeRF:
         if sampling_type == 'random':
             self.coords = self.coords.reshape(self.nerfH * self.nerfW, 2)
     
-    def render_Nerf_image(self, yaw):
+    def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray):
         
-        camera_to_world = np.eye(4)
-        camera_to_world[0,:-1] = [np.cos(yaw), -np.sin(yaw), 0]
-        camera_to_world[1,:-1] = [np.sin(yaw), np.cos(yaw), 0]
-        camera_to_world[2,:-1] = [0,0,1]
-        
-        pitch = np.array([[0,0,1],[0,1,0],[-1,0,0]])
-        camera_to_world[:,:-1] = camera_to_world[:,:-1]@pitch
-        camera_to_world = camera_to_world[0:3,0:4]
-        camera_to_world = torch.FloatTensor( camera_to_world )
+        roll, pitch, yaw = orientation
+
+        rpy = R.from_euler('xyz', [np.deg2rad(90) + roll, pitch, yaw])
+
+        camera_to_world = np.zeros((3,4))
+        camera_to_world[:,-1] = position
+        camera_to_world[:,:-1] = rpy.as_matrix()
 
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
         camera = camera.to('cuda')
@@ -150,6 +148,7 @@ class NeRF:
 
         for i, particle in enumerate(particles):
             #TODO: Potentially speed up render process by only generating specific rays, check locNerf
+            # print(i)
             yaw = 0.001
             compare_img = self.render_Nerf_image(yaw)
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
