@@ -22,7 +22,7 @@ from scipy.spatial.transform import Rotation as R
 class Run():
     def __init__(self, camera_path, nerf_file_path):
 
-        # self.nerfimage = Nerf_image(nerf_file_path)
+        self.nerfimage = Nerf_image(nerf_file_path)
     
 
 
@@ -175,7 +175,7 @@ class Run():
 
         # make copies to prevent mutations
         particles_position_before_update = np.copy(self.filter.particles['position'])
-        particles_rotation_before_update = [gtsam.Rot3(i.matrix()) for i in self.filter.particles['rotation']]
+        particles_rotation_before_update = [R.from_matrix(i) for i in self.filter.particles['rotation']]
 
         # if self.use_convergence_protection:
         #     for i in range(self.number_convergence_particles):

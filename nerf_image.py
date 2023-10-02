@@ -21,7 +21,7 @@ class Nerf_image:
         script_dir = os.path.dirname(os.path.realpath(__file__))
 
         # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-        config_fn = os.path.join(self.path)
+        config_fn = os.path.join(path)
         # config_fn = os.path.join(self.path)
         config_path = Path(config_fn)
         _, pipeline, _, step = eval_setup(
@@ -59,7 +59,9 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
     # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-    config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
+    # config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
+    config_fn = os.path.join('C:\Users\byang\Downloads\nerfstudio\outputs\IRL1\nerfacto\2023-09-15_031235\config.yml')
+    
     config_path = Path(config_fn)
     _, pipeline, _, step = eval_setup(
         config_path,
