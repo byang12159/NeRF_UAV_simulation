@@ -4,14 +4,23 @@ import cv2
 import torch
 from scipy.spatial.transform import Rotation as R
 
-rot = np.array([[1,2,3],
-                [4,5,6],
-                [6,7,8]])
+import os
 
-pos = np.array([[11],[12],[13]])
+# Get the current working directory
+# current_directory = os.getcwd()
+# iter = 1
+# print(current_directory)
+# base_img = cv2.imread("./images/foo{}.png".format(iter))
+# print("./images/foo{}.png".format(iter))
+# print(base_img.shape)
+# cv2.imshow("base",base_img)
+# cv2.waitKey(0)
 
-transformation_matrix = np.eye(4)  # Initialize as identity matrix
-transformation_matrix[:3, :3] = rot  # Set the upper-left 3x3 submatrix as the rotation matrix
-transformation_matrix[:3, 3] = pos  # Set the rightmost column as the translation vector
-
-print(transformation_matrix)
+current_directory = os.getcwd()
+iter = 1
+print(current_directory)
+# base_img = cv2.imread("C:/Users/byang/Downloads/nerfstudio/NeRF_UAV_simulation/images/foo12.png")
+base_img = cv2.imread("./NeRF_UAV_simulation/images/foo12.png")
+print(base_img.shape)
+cv2.imshow("base",base_img)
+cv2.waitKey(0)

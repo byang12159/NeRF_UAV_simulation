@@ -39,19 +39,28 @@ class Nerf_image:
         self.nerfH = 320
         self.camera_type  = CameraType.PERSPECTIVE
         
-    def render_Nerf_image(self, camera_to_world):
+    def render_Nerf_image(self, yaw):
+        
+        camera_to_world = np.eye(4)
+        camera_to_world[0,:-1] = [np.cos(yaw), -np.sin(yaw), 0]
+        camera_to_world[1,:-1] = [np.sin(yaw), np.cos(yaw), 0]
+        camera_to_world[2,:-1] = [0,0,1]
+        
+        pitch = np.array([[0,0,1],[0,1,0],[-1,0,0]])
+        camera_to_world[:,:-1] = camera_to_world[:,:-1]@pitch
+        camera_to_world = torch.FloatTensor([ camera_to_world ])
+        print("parametters",self.fx, self.fy, self.cx, self.cy, self.nerfW,self.nerfH )
+        camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.width, height=self.height, camera_type=self.camera_type)
+        camera = camera.to('cuda')
+        ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
 
-            camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.width, height=self.height, camera_type=self.camera_type)
-            camera = camera.to('cuda')
-            ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
+        with torch.no_grad():
+            tmp = model.get_outputs_for_camera_ray_bundle(ray_bundle)
 
-            with torch.no_grad():
-                tmp = model.get_outputs_for_camera_ray_bundle(ray_bundle)
+        img = tmp['rgb']
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
 
-            img = tmp['rgb']
-            img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
-
-            return img
+        return img
 
 
 if __name__ == "__main__":
@@ -59,8 +68,8 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
     # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-    # config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
-    config_fn = os.path.join('C:\Users\byang\Downloads\nerfstudio\outputs\IRL1\nerfacto\2023-09-15_031235\config.yml')
+    config_fn = os.path.join('./outputs/IRL1/nerfacto/2023-09-15_031235/config.yml')
+    # config_fn = os.path.join('C:\Users\byang\Downloads\nerfstudio\outputs\IRL1\nerfacto\2023-09-15_031235\config.yml')
     
     config_path = Path(config_fn)
     _, pipeline, _, step = eval_setup(
@@ -87,7 +96,7 @@ if __name__ == "__main__":
         
         print("yaw:", yaw)
         
-        
+        print(i['camera_to_world'])
         camera_to_world = np.array(i['camera_to_world'][:-4]).reshape((3,4))
         camera_to_world[0,:-1] = [np.cos(yaw), -np.sin(yaw), 0]
         camera_to_world[1,:-1] = [np.sin(yaw), np.cos(yaw), 0]
@@ -98,12 +107,13 @@ if __name__ == "__main__":
         camera_to_world[:,:-1] = camera_to_world[:,:-1]@pitch
 
         camera_to_world = torch.FloatTensor([ camera_to_world ])
-        
+        print("Camera to world",camera_to_world)
         fx = fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
         cx = cy = 160.0
         width = height = 320
         distCoeffs = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
         camera_type  = CameraType.PERSPECTIVE
+        print("parametters",fx, fy, cx, cy, width,height )
         camera = Cameras(camera_to_worlds = camera_to_world, fx = fx, fy = fy, cx = cx, cy = cy, width=width, height=height, camera_type=camera_type)
         camera = camera.to('cuda')
         ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)

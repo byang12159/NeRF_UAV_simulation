@@ -22,8 +22,8 @@ from scipy.spatial.transform import Rotation as R
 class Run():
     def __init__(self, camera_path, nerf_file_path):
 
-        self.nerfimage = Nerf_image(nerf_file_path)
-    
+        # self.nerfimage = Nerf_image(nerf_file_path)
+        self.nerf = NeRF(nerf_file_path)
 
 
         ####################### Import camera path trajectory json #######################
@@ -36,12 +36,13 @@ class Run():
         for j in range(len(cam_data)):
             self.cam_states[j] = cam_data[0].get('camera_to_world')
 
-        self.nerfW = data.get('render_height')
-        self.nerfH = data.get('render_width')
+        # self.nerfW = data.get('render_height')
+        # self.nerfH = data.get('render_width')
         self.nerfFov = (data.get('keyframes')[0].get('fov')) #Assuming all cameras rendered using same FOV 
 
         print("Finish importing camera states")
-
+        self.nerfW = 320
+        self.nerfH = 320
         ####################### Initialize Variables #######################
 
         # bounds for particle initialization, meters + degrees
@@ -63,9 +64,9 @@ class Run():
 
         self.sampling_strategy = 'random'
         self.photometric_loss = 'rgb'
-
+        self.num_updates =0
         self.control = Controller()
-        self.nerf = NeRF()
+        
 
         self.view_debug_image_iteration = 0 #view NeRF rendered image at estimated pose after number of iterations (set to 0 to disable)
 
@@ -175,7 +176,8 @@ class Run():
 
         # make copies to prevent mutations
         particles_position_before_update = np.copy(self.filter.particles['position'])
-        particles_rotation_before_update = [R.from_matrix(i) for i in self.filter.particles['rotation']]
+        print("TEST",self.filter.particles['rotation'][0])
+        particles_rotation_before_update = [i.as_matrix() for i in self.filter.particles['rotation']]
 
         # if self.use_convergence_protection:
         #     for i in range(self.number_convergence_particles):
@@ -189,7 +191,9 @@ class Run():
 
         
         # resize input image so it matches the scale that NeRF expects
+        print("IMG shape before resize",img.shape)
         img = cv2.resize(img, (int(self.nerfW), int(self.nerfH)))
+        print("IMG shaso",img.shape)
         # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         self.nerf.obs_img = img
         show_true = self.view_debug_image_iteration != 0 and self.num_updates == self.view_debug_image_iteration-1
@@ -204,51 +208,51 @@ class Run():
         # From the meshgrid of image, find Batch# of points to randomly sample and compare, list of 2d coordinates
         rand_inds = np.random.choice(self.nerf.coords.shape[0], size=self.nerf.batch_size, replace=False)
         batch = self.nerf.coords[rand_inds]
-        print("BATCH $$$$$$$$$$$",batch)
+        print("BATCH $$$$$$$$$$$",particles_position_before_update[0])
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
             loss_pose = np.zeros((4,4))
             rot = particles_rotation_before_update[index]
-            loss_pose[0:3, 0:3] = rot.matrix()
+            loss_pose[0:3, 0:3] = rot
             loss_pose[0:3,3] = particle[0:3]
             loss_pose[3,3] = 1.0
             loss_poses.append(loss_pose)
+            break
+        
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img)
-    
+        print("Pass losses")
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/losses[index]
+            break
         total_nerf_time += nerf_time
 
         # Resample Weights
         self.filter.update()
         self.num_updates += 1
-
-        avg_pose = self.filter.compute_weighted_position_average()
-        avg_rot = self.filter.compute_simple_rotation_average()
-        self.nerf_pose = gtsam.Pose3(avg_rot, gtsam.Point3(avg_pose[0], avg_pose[1], avg_pose[2])).matrix()
-
-        if self.plot_particles:
-            self.visualize()
         
         position_est = self.filter.compute_weighted_position_average()
         rot_est = self.filter.compute_simple_rotation_average()
-        pose_est = gtsam.Pose3(rot_est, position_est).matrix()
+        pose_est = np.eye(4)  # Initialize as identity matrix
+        pose_est[:3, :3] = rot_est  # Set the upper-left 3x3 submatrix as the rotation matrix
+        pose_est[:3, 3] = position_est  # Set the rightmost column as the translation vector
+        self.all_pose_est.append(pose_est)
         
         # Update odometry step
-        self.publish_pose_est(pose_est)
+        # self.publish_pose_est(pose_est)
 
         update_time = time.time() - start_time
         print("forward passes took:", total_nerf_time, "out of total", update_time, "for update step")
 
         # return is just for logging
+        print("Finish RGB Run")
         return pose_est
 
 
 
 if __name__ == "__main__":
 
-    camera_path = 'camera_path-2.json'
+    camera_path = 'camera_path.json'
 
     nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
@@ -261,7 +265,9 @@ if __name__ == "__main__":
     # Assume constant time step between trajectory stepping
     for iter in range(len(mcl.cam_states)):
         # MCL: Update, Resample Steps, and Move
-        mcl.rgb_run(mcl.cam_states[iter])
+        base_img = cv2.imread("./NeRF_UAV_simulation/images/foo{}.png".format(iter))
+
+        mcl.rgb_run(base_img)
         
 
     print("########################Done########################")

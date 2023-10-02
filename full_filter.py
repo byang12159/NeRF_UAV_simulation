@@ -8,18 +8,36 @@ from utils import show_img, find_POI, img2mse, load_llff_data, get_pose
 from full_nerf_helpers import load_nerf
 from render_helpers import render, to8b, get_rays
 from particle_filter import ParticleFilter
-# from nerf_image import Nerf_image
+from nerf_image import Nerf_image
 
 from scipy.spatial.transform import Rotation as R
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+import nerfstudio
+from nerfstudio.models.base_model import Model, ModelConfig
+from nerfstudio.models.nerfacto import NerfactoModel, NerfactoModelConfig
+from nerfstudio.cameras.cameras import Cameras, CameraType
+from nerfstudio.data.scene_box import SceneBox
+import torch 
+import numpy as np 
+import json 
+import os 
+from nerfstudio.utils.eval_utils import eval_setup
+from pathlib import Path
+import yaml
+import matplotlib.pyplot as plt 
+from nerfstudio.utils import colormaps
+from torchvision.utils import save_image
+import matplotlib.image
 
 # part of this script is adapted from iNeRF https://github.com/salykovaa/inerf
 # and NeRF-Pytorch https://github.com/yenchenlin/nerf-pytorch/blob/master/load_llff.py
 
 class NeRF:
     
-    def __init__(self):
+    def __init__(self,path):
         #  def __init__(self, nerf_params):
         # Parameters
         # self.output_dir = './output/'
@@ -28,9 +46,7 @@ class NeRF:
         # self.obs_img_num = nerf_params['obs_img_num']
         self.batch_size = 32 # number of pixels to use for measurement points
         self.factor = 4 # image down-sample factor
-        self.focal = 635
-        self.H = 720
-        self.W = 1280
+
         # self.near = nerf_params['near']
         # self.far = nerf_params['far']
         # self.spherify = False
@@ -47,12 +63,33 @@ class NeRF:
         # print("dataset type:", self.dataset_type)
         # print("no ndc:", self.no_ndc)
         
-        
+        #Render 2d Images
+        script_dir = os.path.dirname(os.path.realpath(__file__))
 
-        self.focal = self.focal / self.factor
-        self.H =  self.H / self.factor
-        self.W =  self.W / self.factor
-        self.H, self.W = int(self.H), int(self.W)
+        # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
+        config_fn = os.path.join(path)
+        # config_fn = os.path.join(self.path)
+        config_path = Path(config_fn)
+        _, pipeline, _, step = eval_setup(
+            config_path,
+            eval_num_rays_per_chunk=None,
+            test_mode='inference'
+        )
+        
+        self.model = pipeline.model
+        self.fx = (320.0/2)/(np.tan(np.deg2rad(50)/2))
+        self.fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
+        self.cx = 160.0
+        self.cy = 160.0
+        self.nerfW = 320
+        self.nerfH = 320
+        self.camera_type  = CameraType.PERSPECTIVE
+
+        self.focal = self.fx
+        # self.focal = self.focal / self.factor
+        # self.nerfH =  self.nerfH / self.factor
+        # self.nerfW =  self.nerfW / self.factor
+        # self.nerfH, self.nerfW = int(self.nerfH), int(self.nerfW)
 
         # we don't actually use obs_img_pose when we run live images. this prevents attribute errors later in the code
         self.obs_img_pose = None
@@ -74,12 +111,36 @@ class NeRF:
             plt.imshow(self.obs_img_noised)
             plt.show()
 
-        self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.W - 1, self.W), np.linspace(0, self.H - 1, self.H)), -1),
+        self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.nerfW - 1, self.nerfW), np.linspace(0, self.nerfH - 1, self.nerfH)), -1),
                             dtype=int)
 
         if sampling_type == 'random':
-            self.coords = self.coords.reshape(self.H * self.W, 2)
+            self.coords = self.coords.reshape(self.nerfH * self.nerfW, 2)
+    
+    def render_Nerf_image(self, yaw):
+        
+        camera_to_world = np.eye(4)
+        camera_to_world[0,:-1] = [np.cos(yaw), -np.sin(yaw), 0]
+        camera_to_world[1,:-1] = [np.sin(yaw), np.cos(yaw), 0]
+        camera_to_world[2,:-1] = [0,0,1]
+        
+        pitch = np.array([[0,0,1],[0,1,0],[-1,0,0]])
+        camera_to_world[:,:-1] = camera_to_world[:,:-1]@pitch
+        camera_to_world = camera_to_world[0:3,0:4]
+        camera_to_world = torch.FloatTensor( camera_to_world )
 
+        camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
+        camera = camera.to('cuda')
+        ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
+
+        with torch.no_grad():
+            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle)
+
+        img = tmp['rgb']
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+
+        return img
+    
     def get_loss(self, particles, batch, base_img):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
@@ -89,14 +150,15 @@ class NeRF:
 
         for i, particle in enumerate(particles):
             #TODO: Potentially speed up render process by only generating specific rays, check locNerf
-            yaw = 0
-            compare_img = Nerf_image.render_Nerf_image(yaw)
+            yaw = 0.001
+            compare_img = self.render_Nerf_image(yaw)
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
             compare_tensor = torch.tensor(compare_img_points)
 
             base_img_points = base_img[batch[:,0],batch[:,1]]
             base_tensor = torch.tensor(base_img_points)
 
+            # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
             loss = img2mse(base_tensor,compare_tensor)
             losses.append(loss.item())
       
@@ -108,9 +170,11 @@ class NeRF:
         pose_dummy = torch.from_numpy(nerf_pose).cuda()
         with torch.no_grad():
             print(nerf_pose)
-            rgb, disp, acc, _ = render(self.H, self.W, self.focal, chunk=self.chunk, c2w=pose_dummy[:3, :4], **self.render_kwargs)
+            rgb, disp, acc, _ = render(self.nerfH, self.nerfW, self.focal, chunk=self.chunk, c2w=pose_dummy[:3, :4], **self.render_kwargs)
             rgb = rgb.cpu().detach().numpy()
             rgb8 = to8b(rgb)
             ref = to8b(self.obs_img)
         plt.imshow(rgb8)
         plt.show()
+
+    
