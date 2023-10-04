@@ -117,7 +117,7 @@ class NeRF:
         if sampling_type == 'random':
             self.coords = self.coords.reshape(self.nerfH * self.nerfW, 2)
     
-    def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray):
+    def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray, save, save_name, iter,particle_number):
 
         euler_angles_degrees = orientation.as_euler('xyz', degrees=True)
 
@@ -137,9 +137,44 @@ class NeRF:
         img = tmp['rgb']
         img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
 
+        if save:
+            output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
+            cv2.imwrite(output_dir, img)
+
         return img
     
-    def get_loss(self, particle_poses, batch, base_img):
+    def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
+        i = state_now
+        future = state_future
+        f_x = future[3]
+        f_y = future[7]
+        
+        yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
+        print("YAW ........",yaw)
+        camera_to_world = np.array(i[:-4]).reshape((3,4))
+        print("1c2w",camera_to_world)
+        rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
+        print("rpy",rpy.as_matrix())
+        camera_to_world[:,:-1] = rpy.as_matrix()
+        print("FINAL C2W ...........\n",camera_to_world)
+        camera_to_world = torch.FloatTensor( camera_to_world )
+
+        camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
+        camera = camera.to('cuda')
+        ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
+
+        with torch.no_grad():
+            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle)
+
+        img = tmp['rgb']
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+
+        if save:
+            output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
+            cv2.imwrite(output_dir, img)
+
+        return img
+    def get_loss(self, particle_poses, batch, base_img, iter):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
         losses = []
@@ -148,7 +183,10 @@ class NeRF:
 
         for i, particle in enumerate(particle_poses):
             print(i)
-            compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3])
+            if i%10 == 0:
+                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=True, save_name='particle', iter=iter,particle_number=i)
+            else:
+                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
             compare_tensor = torch.tensor(compare_img_points)
 
@@ -158,6 +196,8 @@ class NeRF:
             # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
             loss = img2mse(base_tensor,compare_tensor)
             losses.append(loss.item())
+
+
       
         nerf_time = time.time() - start_time
                    

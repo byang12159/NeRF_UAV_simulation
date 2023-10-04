@@ -12,19 +12,13 @@ from full_filter import NeRF
 from nerf_image import Nerf_image
 from controller import Controller
 from scipy.spatial.transform import Rotation as R
-
-# update step:
-
-# particlefilter.py update()
-
-# this is called in nav_mode.py in rgb_run()
-
+import os
+import torch 
 class Run():
     def __init__(self, camera_path, nerf_file_path):
 
         # self.nerfimage = Nerf_image(nerf_file_path)
         self.nerf = NeRF(nerf_file_path)
-
 
         ####################### Import camera path trajectory json #######################
         with open(camera_path, 'r') as file:
@@ -34,7 +28,7 @@ class Run():
         self.cam_states = np.zeros((len(cam_data),16))
 
         for j in range(len(cam_data)):
-            self.cam_states[j] = cam_data[0].get('camera_to_world')
+            self.cam_states[j] = cam_data[j].get('camera_to_world')
 
         # self.nerfW = data.get('render_height')
         # self.nerfH = data.get('render_width')
@@ -49,7 +43,7 @@ class Run():
         self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
         self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':2.5,'ry':179.0,'rx':2.5}
 
-        self.num_particles = 100
+        self.num_particles = 50
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
@@ -104,6 +98,7 @@ class Run():
             [self.min_bounds['px'], self.min_bounds['py'], self.min_bounds['pz'], self.min_bounds['rz'], self.min_bounds['ry'], self.min_bounds['rx']]),
             np.array([self.max_bounds['px'], self.max_bounds['py'], self.max_bounds['pz'], self.max_bounds['rz'], self.max_bounds['ry'], self.max_bounds['rx']]),
             size = (self.num_particles, 6))
+        
 
         # Dict of position + rotation, with position as np.array(300x6)
         self.initial_particles = self.set_initial_particles()
@@ -117,12 +112,32 @@ class Run():
         initial_positions = np.zeros((self.num_particles, 3))
         rots = []
         for index, particle in enumerate(self.initial_particles_noise):
-            x = particle[0]
-            y = particle[1]
-            z = particle[2]
-            phi = particle[3]
-            theta = particle[4]
-            psi = particle[5]
+            # Initialize at origin location
+            i = self.cam_states[0]
+            future = self.cam_states[1]
+            f_x = future[3]
+            f_y = future[7]
+            
+            yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
+            
+            camera_to_world = np.array(i[:-4]).reshape((3,4))
+            rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
+            camera_to_world[:,:-1] = rpy.as_matrix()
+            x = camera_to_world[0][3]
+            y = camera_to_world[1][3]
+            z = camera_to_world[2][3]
+
+            gt_rotation_obj  = R.from_matrix(camera_to_world[0:3,0:3])
+            gt_euler  =  gt_rotation_obj.as_euler('xyz', degrees=True)
+            phi = gt_euler[0]
+            theta = gt_euler[1]
+            psi = gt_euler[2]
+            # x = particle[0]
+            # y = particle[1]
+            # z = particle[2]
+            # phi = particle[3]
+            # theta = particle[4]
+            # psi = particle[5]
 
             # print(x,y,z)
             particle_pose = get_pose(phi, theta, psi, x, y, z, self.obs_img_pose, self.center_about_true_pose)
@@ -135,6 +150,8 @@ class Run():
             
             # print(initial_particles)
 
+        print("INITIAL POSITION ", initial_positions)
+        print("INITIAL ROT", rots)
         return {'position':initial_positions, 'rotation':np.array(rots)}
 
     
@@ -182,18 +199,6 @@ class Run():
         particles_position_before_update = np.copy(self.filter.particles['position'])
         particles_rotation_before_update = [i.as_matrix() for i in self.filter.particles['rotation']]
 
-
-        # if self.use_convergence_protection:
-        #     for i in range(self.number_convergence_particles):
-        #         t_x = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-        #         t_y = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-        #         t_z = np.random.uniform(low=-self.convergence_noise, high=self.convergence_noise)
-        #         # TODO this is not thread safe. have two lines because we need to both update
-        #         # particles to check the loss and the actual locations of the particles
-        #         self.filter.particles["position"][i] = self.filter.particles["position"][i] + np.array([t_x, t_y, t_z])
-        #         particles_position_before_update[i] = particles_position_before_update[i] + np.array([t_x, t_y, t_z])
-
-        
         # resize input image so it matches the scale that NeRF expects
         img = cv2.resize(img, (int(self.nerfW), int(self.nerfH)))
         self.nerf.obs_img = img
@@ -221,7 +226,7 @@ class Run():
             loss_poses.append(loss_pose)
 
         
-        losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img)
+        losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img, iter=iter)
         print("Pass losses")
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/losses[index]
@@ -251,17 +256,33 @@ class Run():
 
         return pose_est
 
-
+import nerfstudio
+from nerfstudio.models.base_model import Model, ModelConfig
+from nerfstudio.models.nerfacto import NerfactoModel, NerfactoModelConfig
+from nerfstudio.cameras.cameras import Cameras, CameraType
+from nerfstudio.data.scene_box import SceneBox
+import torch 
+import numpy as np 
+import json 
+import os 
+from nerfstudio.utils.eval_utils import eval_setup
+from pathlib import Path
+import yaml
+import matplotlib.pyplot as plt 
+from nerfstudio.utils import colormaps
+from torchvision.utils import save_image
+from scipy.spatial.transform import Rotation
+import copy
+import cv2
 
 if __name__ == "__main__":
 
     camera_path = 'camera_path.json'
-
     nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
     mcl = Run(camera_path,nerf_file_path)      
 
-
+ 
     # Initialize Drone Position
     est_states = np.zeros((len(mcl.cam_states) ,3))
     gt_states  = np.zeros((len(mcl.cam_states) ,16))
@@ -271,64 +292,71 @@ if __name__ == "__main__":
     
     # Assume constant time step between trajectory stepping
     for iter in range(len(mcl.cam_states)-1):
-        # MCL: Update, Resample Steps, and Move
-        base_img = cv2.imread("./NeRF_UAV_simulation/images/foo{}.png".format(iter))
+        # new_dir_name = f"NeRF_UAV_simulation/images/Iteration_{iter}"
+        # if not os.path.exists(new_dir_name):
+        #     os.mkdir(new_dir_name)
 
-        pose_est = mcl.rgb_run(iter, base_img)
+        base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
+        cv2.imshow("img ",base_img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
-        est_states[iter] = pose_est[0:3,3].flatten()
-        gt_states[iter] = mcl.cam_states[iter]
+        # pose_est = mcl.rgb_run(iter, base_img)   
 
-        est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
-        est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
+        # # Visualization
+        # est_states[iter] = pose_est[0:3,3].flatten()
+        # gt_states[iter] = mcl.cam_states[iter]
 
-        gt_matrix = gt_states[iter].reshape(4,4)
-        gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
-        gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
+        # est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
+        # est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
+
+        # gt_matrix = gt_states[iter].reshape(4,4)
+        # gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
+        # gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
            
-        print(">>>>>>>>>>>>>> ")
-        print(iteration_count[:iter+1])
-        # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
-        print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
-        print(">>>>>>>>>>>>>> ")
+        # print(">>>>>>>>>>>>>> ")
+        # print(iteration_count[:iter+1])
+        # # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
+        # print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        # print(">>>>>>>>>>>>>> ")
     
-        # Create a figure with six subplots (2 rows, 3 columns)
-        plt.figure(figsize=(12, 6))
+        # # Create a figure with six subplots (2 rows, 3 columns)
+        # plt.figure(figsize=(12, 6))
 
-        plt.subplot(2, 3, 1)
-        plt.plot(iteration_count[:iter+1], np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
-        plt.title('X error')
+        # plt.subplot(2, 3, 1)
+        # plt.plot(iteration_count[:iter+1], np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        # plt.title('X error')
 
-        plt.subplot(2, 3, 2)
-        plt.plot(iteration_count[:iter+1], np.abs( gt_states[:iter+1,7]-est_states[:iter+1,1]) )
-        plt.title('Y error')
+        # plt.subplot(2, 3, 2)
+        # plt.plot(iteration_count[:iter+1], np.abs( gt_states[:iter+1,7]-est_states[:iter+1,1]) )
+        # plt.title('Y error')
 
-        # Plot the third graph in the third subplot
-        plt.subplot(2, 3, 3)
-        plt.plot(iteration_count[:iter+1],np.abs(gt_states[:iter+1,11]-est_states[:iter+1,2]) )
-        plt.title('Z error')
+        # # Plot the third graph in the third subplot
+        # plt.subplot(2, 3, 3)
+        # plt.plot(iteration_count[:iter+1],np.abs(gt_states[:iter+1,11]-est_states[:iter+1,2]) )
+        # plt.title('Z error')
 
-        # Plot the fourth graph in the fourth subplot
-        plt.subplot(2, 3, 4)
-        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,0]-gt_euler[:iter+1,0]) )
-        plt.title('Yaw error')
+        # # Plot the fourth graph in the fourth subplot
+        # plt.subplot(2, 3, 4)
+        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,0]-gt_euler[:iter+1,0]) )
+        # plt.title('Yaw error')
 
-        # Plot the fifth graph in the fifth subplot
-        plt.subplot(2, 3, 5)
-        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,1]-gt_euler[:iter+1,1]))
-        plt.title('Pitch error')
+        # # Plot the fifth graph in the fifth subplot
+        # plt.subplot(2, 3, 5)
+        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,1]-gt_euler[:iter+1,1]))
+        # plt.title('Pitch error')
 
-        # Plot the sixth graph in the sixth subplot
-        plt.subplot(2, 3, 6)
-        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,2]-gt_euler[:iter+1,2]))
-        plt.title('Roll error')
+        # # Plot the sixth graph in the sixth subplot
+        # plt.subplot(2, 3, 6)
+        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,2]-gt_euler[:iter+1,2]))
+        # plt.title('Roll error')
 
-        plt.tight_layout()
-        file_path = f'./NeRF_UAV_simulation/Plots/plot{iter}.png'
-        plt.savefig(file_path)
-        plt.close()
+        # plt.tight_layout()
+        # file_path = f'./NeRF_UAV_simulation/Plots/plot{iter}.png'
+        # plt.savefig(file_path)
+        # plt.close()
         
-        print('cam_states[iter]',mcl.cam_states[iter])
-        print('pose est',pose_est)
+        # print('cam_states[iter]',mcl.cam_states[iter])
+        # print('pose est',pose_est)
 
     print("########################Done########################")
