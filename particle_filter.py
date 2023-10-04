@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import logm,expm
-
+from scipy.spatial.transform import Rotation as R
 from multiprocessing import Lock
 
 class ParticleFilter:
@@ -72,11 +72,11 @@ class ParticleFilter:
         self.weights=self.weights / sum_weights
     
         #resample
-        self.particle_lock.acquire()
+
         choice = np.random.choice(self.num_particles, self.num_particles, p = self.weights, replace=True)
         temp = {'position':np.copy(self.particles['position'])[choice, :], 'rotation':np.copy(self.particles['rotation'])[choice]}
         self.particles = temp
-        self.particle_lock.release()
+
 
     def compute_simple_position_average(self):
         # Simple averaging does not use weighted average or k means.
@@ -109,3 +109,12 @@ class ParticleFilter:
             else:
                 # TODO do the matrix math in gtsam to avoid all the type casting
                 R = R @ expm(r)
+
+    def odometry_update(self,state_difference):
+        for i in range(self.num_particles):
+            self.particles['position'][i] += [state_difference[3], state_difference[7], state_difference[11]]
+
+            diff_rotation = R.from_matrix(self.cam_states[i].reshape(4,4)[0:3,0:3])
+            self.particles['rotation'][i] *= diff_rotation
+        
+        print("Finish odometry update")

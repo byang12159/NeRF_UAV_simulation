@@ -118,15 +118,15 @@ class NeRF:
             self.coords = self.coords.reshape(self.nerfH * self.nerfW, 2)
     
     def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray):
-        
-        roll, pitch, yaw = orientation
 
-        rpy = R.from_euler('xyz', [np.deg2rad(90) + roll, pitch, yaw])
+        euler_angles_degrees = orientation.as_euler('xyz', degrees=True)
+
+        rpy = R.from_euler('xyz', [np.deg2rad(90) + euler_angles_degrees[0], euler_angles_degrees[1], euler_angles_degrees[2]])
 
         camera_to_world = np.zeros((3,4))
         camera_to_world[:,-1] = position
         camera_to_world[:,:-1] = rpy.as_matrix()
-
+        camera_to_world = torch.FloatTensor( camera_to_world )
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
         camera = camera.to('cuda')
         ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
@@ -139,18 +139,16 @@ class NeRF:
 
         return img
     
-    def get_loss(self, particles, batch, base_img):
+    def get_loss(self, particle_poses, batch, base_img):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
         losses = []
 
         start_time = time.time()
 
-        for i, particle in enumerate(particles):
-            #TODO: Potentially speed up render process by only generating specific rays, check locNerf
-            # print(i)
-            yaw = 0.001
-            compare_img = self.render_Nerf_image(yaw)
+        for i, particle in enumerate(particle_poses):
+            print(i)
+            compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3])
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
             compare_tensor = torch.tensor(compare_img_points)
 

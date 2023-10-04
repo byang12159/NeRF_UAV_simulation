@@ -49,7 +49,7 @@ class Run():
         self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
         self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':2.5,'ry':179.0,'rx':2.5}
 
-        self.num_particles = 300
+        self.num_particles = 100
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
@@ -145,14 +145,9 @@ class Run():
         pass
 
     def publish_pose_est(self, pose_est, img_timestamp = None):
+        print("Pose Est",pose_est.shape)
         pose_est = self.move()
-        pose_est.header.frame_id = "world"
-
-        # if we don't run on rosbag data then we don't have timestamps
-        if img_timestamp is not None:
-            pose_est.header.stamp = img_timestamp
-
-
+ 
         position_est = pose_est[:3, 3]
         rot_est = R.as_quat(pose_est[:3, :3])
 
@@ -169,15 +164,24 @@ class Run():
         # publish pose
         self.pose_pub.publish(pose_est)
 
-    def rgb_run(self, img,msg=None, get_rays_fn=None, render_full_image=False):
+    def odometry_update(self,state_difference):
+        for i in range(self.num_particles):
+            self.filter.particles['position'][i] += [state_difference[3], state_difference[7], state_difference[11]]
+
+            diff_rotation = R.from_matrix(state_difference.reshape(4,4)[0:3,0:3])
+            self.filter.particles['rotation'][i] *= diff_rotation
+        
+        print("Finish odometry update")
+
+    def rgb_run(self,iter, img,msg=None, get_rays_fn=None, render_full_image=False):
         print("processing image")
         start_time = time.time()
         self.rgb_input_count += 1
 
         # make copies to prevent mutations
         particles_position_before_update = np.copy(self.filter.particles['position'])
-        print("TEST",self.filter.particles['rotation'][0])
         particles_rotation_before_update = [i.as_matrix() for i in self.filter.particles['rotation']]
+
 
         # if self.use_convergence_protection:
         #     for i in range(self.number_convergence_particles):
@@ -191,10 +195,7 @@ class Run():
 
         
         # resize input image so it matches the scale that NeRF expects
-        print("IMG shape before resize",img.shape)
         img = cv2.resize(img, (int(self.nerfW), int(self.nerfH)))
-        print("IMG shaso",img.shape)
-        # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         self.nerf.obs_img = img
         show_true = self.view_debug_image_iteration != 0 and self.num_updates == self.view_debug_image_iteration-1
         #Create a grid to sample image points for comparison
@@ -208,7 +209,6 @@ class Run():
         # From the meshgrid of image, find Batch# of points to randomly sample and compare, list of 2d coordinates
         rand_inds = np.random.choice(self.nerf.coords.shape[0], size=self.nerf.batch_size, replace=False)
         batch = self.nerf.coords[rand_inds]
-        print("BATCH $$$$$$$$$$$",particles_position_before_update[0])
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
@@ -219,13 +219,13 @@ class Run():
             loss_pose[0:3,3] = particle[0:3]
             loss_pose[3,3] = 1.0
             loss_poses.append(loss_pose)
-            # break
+
         
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img)
         print("Pass losses")
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/losses[index]
-            # break
+
         total_nerf_time += nerf_time
 
         # Resample Weights
@@ -240,13 +240,15 @@ class Run():
         self.all_pose_est.append(pose_est)
         
         # Update odometry step
-        self.publish_pose_est(pose_est)
+        current_state = self.cam_states[iter]
+        next_state = self.cam_states[iter+1]
+        self.odometry_update(next_state-current_state)
+        # self.publish_pose_est(pose_est)
+
 
         update_time = time.time() - start_time
         print("forward passes took:", total_nerf_time, "out of total", update_time, "for update step")
 
-        # return is just for logging
-        print("Finish RGB Run")
         return pose_est
 
 
@@ -255,23 +257,78 @@ if __name__ == "__main__":
 
     camera_path = 'camera_path.json'
 
-    nerf_file_path = '/home/younger/work/nerfstudio/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
+    nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
     mcl = Run(camera_path,nerf_file_path)      
 
 
     # Initialize Drone Position
-    drone_state = [[0,0,0,0,0,0]]
-
+    est_states = np.zeros((len(mcl.cam_states) ,3))
+    gt_states  = np.zeros((len(mcl.cam_states) ,16))
+    est_euler  = np.zeros((len(mcl.cam_states) ,3))  
+    gt_euler   = np.zeros((len(mcl.cam_states) ,3))  
+    iteration_count = np.arange(0,len(mcl.cam_states) , 1, dtype=int)
+    
     # Assume constant time step between trajectory stepping
-    for iter in range(len(mcl.cam_states)):
+    for iter in range(len(mcl.cam_states)-1):
         # MCL: Update, Resample Steps, and Move
         base_img = cv2.imread("./NeRF_UAV_simulation/images/foo{}.png".format(iter))
 
-        pose_est = mcl.rgb_run(base_img)
+        pose_est = mcl.rgb_run(iter, base_img)
 
+        est_states[iter] = pose_est[0:3,3].flatten()
+        gt_states[iter] = mcl.cam_states[iter]
+
+        est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
+        est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
+
+        gt_matrix = gt_states[iter].reshape(4,4)
+        gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
+        gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
+           
         print(">>>>>>>>>>>>>> ")
-        print(mcl.cam_states[iter])
-        print(pose_est)
+        print(iteration_count[:iter+1])
+        # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
+        print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        print(">>>>>>>>>>>>>> ")
+    
+        # Create a figure with six subplots (2 rows, 3 columns)
+        plt.figure(figsize=(12, 6))
+
+        plt.subplot(2, 3, 1)
+        plt.plot(iteration_count[:iter+1], np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        plt.title('X error')
+
+        plt.subplot(2, 3, 2)
+        plt.plot(iteration_count[:iter+1], np.abs( gt_states[:iter+1,7]-est_states[:iter+1,1]) )
+        plt.title('Y error')
+
+        # Plot the third graph in the third subplot
+        plt.subplot(2, 3, 3)
+        plt.plot(iteration_count[:iter+1],np.abs(gt_states[:iter+1,11]-est_states[:iter+1,2]) )
+        plt.title('Z error')
+
+        # Plot the fourth graph in the fourth subplot
+        plt.subplot(2, 3, 4)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,0]-gt_euler[:iter+1,0]) )
+        plt.title('Yaw error')
+
+        # Plot the fifth graph in the fifth subplot
+        plt.subplot(2, 3, 5)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,1]-gt_euler[:iter+1,1]))
+        plt.title('Pitch error')
+
+        # Plot the sixth graph in the sixth subplot
+        plt.subplot(2, 3, 6)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,2]-gt_euler[:iter+1,2]))
+        plt.title('Roll error')
+
+        plt.tight_layout()
+        file_path = f'./NeRF_UAV_simulation/Plots/plot{iter}.png'
+        plt.savefig(file_path)
+        plt.close()
+        
+        print('cam_states[iter]',mcl.cam_states[iter])
+        print('pose est',pose_est)
 
     print("########################Done########################")
