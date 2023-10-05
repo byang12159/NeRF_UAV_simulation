@@ -191,12 +191,20 @@ class Run():
         # publish pose
         self.pose_pub.publish(pose_est)
 
-    def odometry_update(self,state_difference):
+    def odometry_update(self,state0, state1):
+        state_difference = state1-state0
+        rot0 = R.from_matrix(state0[:3,:3])
+        rot1 = R.from_matrix(state1[:3,:3])
+        eul0 = rot0.as_euler('xyz')
+        eul1 = rot1.as_euler('xyz')
+        diffeul = eul1-eul0
         for i in range(self.num_particles):
-            self.filter.particles['position'][i] += [state_difference[3], state_difference[7], state_difference[11]]
+            self.filter.particles['position'][i] += [state_difference[0][3], state_difference[1][3], state_difference[2][3]]
 
-            diff_rotation = R.from_matrix(state_difference.reshape(4,4)[0:3,0:3])
-            self.filter.particles['rotation'][i] *= diff_rotation
+            peul = self.filter.particles['rotation'][i].as_euler('xyz')
+            peul += diffeul
+            prot = R.from_euler('xyz',peul)
+            self.filter.particles['rotation'][i] = prot
         
         print("Finish odometry update")
 
@@ -230,7 +238,7 @@ class Run():
             if index %10 ==0:
                 # print(f"PART STATE for iteration {iter}:   ",particles_position_before_update[index])
                 pobj = R.from_matrix(particles_rotation_before_update[index])
-                print(f"PART for iteration {iter}:   \n",bobj.as_euler('xyz', degrees=True))
+                print(f"PART EULER for iteration {iter}:   \n",pobj.as_euler('xyz', degrees=True))
             loss_pose = np.zeros((4,4))
             rot = particles_rotation_before_update[index]
             loss_pose[0:3, 0:3] = rot
@@ -259,9 +267,9 @@ class Run():
         self.all_pose_est.append(pose_est)
         
         # Update odometry step
-        current_state = self.cam_states[iter]
-        next_state = self.cam_states[iter+1]
-        self.odometry_update(next_state-current_state)
+        current_state = self.cam_states[iter].reshape(4,4)
+        next_state = self.cam_states[iter+1].reshape(4,4)
+        self.odometry_update(current_state,next_state)
         # self.publish_pose_est(pose_est)
 
 
@@ -311,22 +319,14 @@ if __name__ == "__main__":
             os.mkdir(new_dir_name)
 
         base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
-        cv2.imshow("img ",base_img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # cv2.imshow("img ",base_img)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
         brot = mcl.cam_states[iter].reshape(4,4)
         bobj = R.from_matrix(brot[:3,:3])
         print(f"BASE EULER for iteration {iter}:   \n",bobj.as_euler('xyz', degrees=True))
         
-        # test_pose = np.array([[ 6.97201566e-01 , 1.11022302e-16 ,-7.16875147e-01, -6.83163640e-01],
-        #                     [-7.16875147e-01 , 1.66533454e-16, -6.97201566e-01 , 7.37852300e-02],q
-        #                     [ 0.00000000e+00 , 1.00000000e+00 , 1.66533454e-16, -2.28330954e-01]]) 
-        
-        # comp_img = mcl.nerf.render_Nerf_image(test_pose[:3,:3], test_pose[:,3],save=False, save_name = "base", iter=iter, particle_number=None) 
-        # cv2.imshow("comp ",comp_img)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
         pose_est = mcl.rgb_run(iter, base_img)   
 
         # Visualization

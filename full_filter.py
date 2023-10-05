@@ -188,10 +188,12 @@ class NeRF:
         for i, particle in enumerate(particle_poses):
             print(i)
             if i == 1:
+                # pobj = R.from_matrix(particle[0:3,0:3])
+                # print(f"PART for iteration:   \n",pobj.as_euler('xyz', degrees=True))
                 compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
-                cv2.imshow("comp ",compare_img)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
+                # cv2.imshow("comp ",compare_img)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
             else:
                 compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
 
