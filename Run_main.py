@@ -15,10 +15,10 @@ from scipy.spatial.transform import Rotation as R
 import os
 import torch 
 class Run():
-    def __init__(self, camera_path, nerf_file_path):
+    def __init__(self, camera_path, nerf_file_path, width=320, height=320, fov=50):
 
         # self.nerfimage = Nerf_image(nerf_file_path)
-        self.nerf = NeRF(nerf_file_path)
+        self.nerf = NeRF(nerf_file_path, width, height, fov)
 
         ####################### Import camera path trajectory json #######################
         with open(camera_path, 'r') as file:
@@ -43,7 +43,7 @@ class Run():
         self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
         self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':2.5,'ry':179.0,'rx':2.5}
 
-        self.num_particles = 25
+        self.num_particles = 300
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     camera_path = 'camera_path.json'
     nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
-    mcl = Run(camera_path,nerf_file_path)      
+    mcl = Run(camera_path,nerf_file_path, 80, 80, 50)      
 
  
     # Initialize Drone Position

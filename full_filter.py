@@ -37,7 +37,7 @@ import matplotlib.image
 
 class NeRF:
     
-    def __init__(self,path):
+    def __init__(self,path, width, height, fov):
         #  def __init__(self, nerf_params):
         # Parameters
         # self.output_dir = './output/'
@@ -77,12 +77,12 @@ class NeRF:
         )
         
         self.model = pipeline.model
-        self.fx = (320.0/2)/(np.tan(np.deg2rad(50)/2))
-        self.fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
-        self.cx = 160.0
-        self.cy = 160.0
-        self.nerfW = 320
-        self.nerfH = 320
+        self.fx = (width/2)/(np.tan(np.deg2rad(fov)/2))
+        self.fy = (height/2)/(np.tan(np.deg2rad(fov)/2))
+        self.cx = width/2
+        self.cy = height/2
+        self.nerfW = width
+        self.nerfH = height
         self.camera_type  = CameraType.PERSPECTIVE
 
         self.focal = self.fx
