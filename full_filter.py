@@ -37,14 +37,14 @@ import matplotlib.image
 
 class NeRF:
     
-    def __init__(self,path, width, height, fov):
+    def __init__(self,path, width, height, fov, batch_size):
         #  def __init__(self, nerf_params):
         # Parameters
         # self.output_dir = './output/'
         # self.data_dir = nerf_params['data_dir']
         # self.model_name = nerf_params['model_name']
         # self.obs_img_num = nerf_params['obs_img_num']
-        self.batch_size = 32 # number of pixels to use for measurement points
+        self.batch_size = batch_size # number of pixels to use for measurement points
         self.factor = 4 # image down-sample factor
 
         # self.near = nerf_params['near']
@@ -117,7 +117,29 @@ class NeRF:
         if sampling_type == 'random':
             self.coords = self.coords.reshape(self.nerfH * self.nerfW, 2)
     
-    def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray, save, save_name, iter,particle_number):
+    def render_Nerf_image_batch(self, particle_poses, batch, iter):
+        ray_bundle_all = None
+        for i, particle in enumerate(particle_poses):
+            camera_to_world = torch.FloatTensor(particle[0:3,:]) 
+            camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
+            camera = camera.to('cuda')
+            ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
+            ray_bundle_sample = ray_bundle[batch[:,0], batch[:,1]]
+            ray_bundle_sample = ray_bundle_sample.reshape((-1,1))
+            if i == 0:
+                ray_bundle_all = ray_bundle_sample 
+            else:
+                ray_bundle_all = torch.vstack((ray_bundle_all, ray_bundle_sample))
+        with torch.no_grad():
+            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle_sample)
+
+        img = tmp['rgb']
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+
+        return img
+
+
+    def render_Nerf_image(self, orientation: np.ndarray, position: np.ndarray, batch, save, save_name, iter,particle_number):
         
         # orientation = R.from_matrix(orientation)
         euler_angles_degrees = orientation.as_euler('xyz')
@@ -129,17 +151,18 @@ class NeRF:
         camera_to_world = np.zeros((3,4))
         camera_to_world[:,-1] = position
         camera_to_world[:,:-1] = rpy.as_matrix()
-        print("NORMAL RENDER C2W ...........\n",camera_to_world)
+        # print("NORMAL RENDER C2W ...........\n",camera_to_world)
         camera_to_world = torch.FloatTensor( camera_to_world )
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
         camera = camera.to('cuda')
         ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
-
+        ray_bundle_sample = ray_bundle[batch[:,0], batch[:,1]]
+        ray_bundle_sample = ray_bundle_sample.reshape((-1,1))
         with torch.no_grad():
-            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle)
+            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle_sample)
 
         img = tmp['rgb']
-        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu()
 
         if save:
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
@@ -147,20 +170,8 @@ class NeRF:
 
         return img
     
-    def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
-        i = state_now
-        future = state_future
-        f_x = future[3]
-        f_y = future[7]
-        
-        yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
-        print("YAW ........",yaw)
-        camera_to_world = np.array(i[:-4]).reshape((3,4))
-        # print("1c2w",camera_to_world)
-        rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
-        # print("rpy",rpy.as_matrix())
-        camera_to_world[:,:-1] = rpy.as_matrix()
-        print("SIMPLE RENDER C2W ...........\n",camera_to_world)
+    def render_Nerf_image_simple(self,camera_to_world, save, save_name, iter,particle_number):
+        # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
         camera_to_world = torch.FloatTensor( camera_to_world )
 
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
@@ -176,8 +187,8 @@ class NeRF:
         if save:
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
             cv2.imwrite(output_dir, img)
-
         return img
+
     def get_loss(self, particle_poses, batch, base_img, iter):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
@@ -185,22 +196,24 @@ class NeRF:
 
         start_time = time.time()
 
+        # all_images = self.render_Nerf_image_batch(particle_poses, batch, iter)
+
         for i, particle in enumerate(particle_poses):
-            print(i)
+            # print(i)
             if i == 1:
                 # pobj = R.from_matrix(particle[0:3,0:3])
                 # print(f"PART for iteration:   \n",pobj.as_euler('xyz', degrees=True))
-                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
+                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3], batch, save=False, save_name='particle', iter=iter,particle_number=i)
                 # cv2.imshow("comp ",compare_img)
                 # cv2.waitKey(0)
                 # cv2.destroyAllWindows()
             else:
-                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
+                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],batch, save=False, save_name='particle', iter=iter,particle_number=i)
+        # for i, compare_img in enumerate(all_images):
+        #     # compare_img_points = compare_img[batch[:,0],batch[:,1]]
+            compare_tensor = compare_img
 
-            compare_img_points = compare_img[batch[:,0],batch[:,1]]
-            compare_tensor = torch.tensor(compare_img_points)
-
-            base_img_points = base_img[batch[:,0],batch[:,1]]
+            base_img_points = base_img[batch[:,0],batch[:,1]].reshape((-1,1,3))
             base_tensor = torch.tensor(base_img_points)
 
             # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)

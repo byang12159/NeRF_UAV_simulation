@@ -15,10 +15,10 @@ from scipy.spatial.transform import Rotation as R
 import os
 import torch 
 class Run():
-    def __init__(self, camera_path, nerf_file_path, width=320, height=320, fov=50):
+    def __init__(self, camera_path, nerf_file_path, width=320, height=320, fov=50, batch_size=32):
 
         # self.nerfimage = Nerf_image(nerf_file_path)
-        self.nerf = NeRF(nerf_file_path, width, height, fov)
+        self.nerf = NeRF(nerf_file_path, width, height, fov, batch_size)
 
         ####################### Import camera path trajectory json #######################
         with open(camera_path, 'r') as file:
@@ -35,8 +35,8 @@ class Run():
         self.nerfFov = (data.get('keyframes')[0].get('fov')) #Assuming all cameras rendered using same FOV 
 
         print("Finish importing camera states")
-        self.nerfW = 320
-        self.nerfH = 320
+        self.nerfW = width
+        self.nerfH = height
         ####################### Initialize Variables #######################
 
         # bounds for particle initialization, meters + degrees
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     camera_path = 'camera_path.json'
     nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
-    mcl = Run(camera_path,nerf_file_path, 80, 80, 50)      
+    mcl = Run(camera_path,nerf_file_path, 320, 320, 50, 40)      
 
  
     # Initialize Drone Position
@@ -311,14 +311,31 @@ if __name__ == "__main__":
     est_euler  = np.zeros((len(mcl.cam_states) ,3))  
     gt_euler   = np.zeros((len(mcl.cam_states) ,3))  
     iteration_count = np.arange(0,len(mcl.cam_states) , 1, dtype=int)
+
     
+    start_time = time.time()
     # Assume constant time step between trajectory stepping
-    for iter in range(len(mcl.cam_states)-1):
+    for iter in range(1):
         new_dir_name = f"NeRF_UAV_simulation/images/Iteration_{iter}"
         if not os.path.exists(new_dir_name):
             os.mkdir(new_dir_name)
 
-        base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
+        state_now = mcl.cam_states[iter]
+        state_future = mcl.cam_states[iter+1]
+        i = state_now
+        future = state_future
+        f_x = future[3]
+        f_y = future[7]
+        
+        yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
+        print("YAW ........",yaw)
+        camera_to_world = np.array(i[:-4]).reshape((3,4))
+        # print("1c2w",camera_to_world)
+        rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
+        # print("rpy",rpy.as_matrix())
+        camera_to_world[:,:-1] = rpy.as_matrix()
+
+        base_img = mcl.nerf.render_Nerf_image_simple(camera_to_world,save=False, save_name = "base", iter=iter, particle_number=None)
         # cv2.imshow("img ",base_img)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
@@ -385,4 +402,4 @@ if __name__ == "__main__":
         print('cam_states[iter]',mcl.cam_states[iter])
         print('pose est',pose_est)
 
-    print("########################Done########################")
+    print(f"########################Done: {time.time() - start_time}########################")
