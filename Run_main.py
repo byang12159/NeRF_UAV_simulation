@@ -43,7 +43,7 @@ class Run():
         self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
         self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':2.5,'ry':179.0,'rx':2.5}
 
-        self.num_particles = 50
+        self.num_particles = 25
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
@@ -114,24 +114,33 @@ class Run():
         for index, particle in enumerate(self.initial_particles_noise):
             # Initialize at origin location
             i = self.cam_states[0]
-            future = self.cam_states[1]
-            f_x = future[3]
-            f_y = future[7]
+            # future = self.cam_states[1]
+            # f_x = future[3]
+            # f_y = future[7]
             
-            yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
+            # yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
             
-            camera_to_world = np.array(i[:-4]).reshape((3,4))
-            rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
-            camera_to_world[:,:-1] = rpy.as_matrix()
-            x = camera_to_world[0][3]
-            y = camera_to_world[1][3]
-            z = camera_to_world[2][3]
-
-            gt_rotation_obj  = R.from_matrix(camera_to_world[0:3,0:3])
-            gt_euler  =  gt_rotation_obj.as_euler('xyz', degrees=True)
+            # camera_to_world = np.array(i[:-4]).reshape((3,4))
+            # rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
+            # camera_to_world[:,:-1] = rpy.as_matrix()
+            # x = camera_to_world[0][3]
+            # y = camera_to_world[1][3]
+            # z = camera_to_world[2][3]
+            x = i[3]
+            y = i[7]
+            z = i[11]
+            rot1 = i.reshape(4,4)
+            rot = rot1[:3,:3]
+            gt_rotation_obj  = R.from_matrix(rot)
+            gt_euler  =  gt_rotation_obj.as_euler('xyz')
+            # phi = gt_euler[0]
+            # theta = gt_euler[1]
+            # psi = gt_euler[2]
             phi = gt_euler[0]
             theta = gt_euler[1]
             psi = gt_euler[2]
+
+            # print("initialzia \n",rot1)
             # x = particle[0]
             # y = particle[1]
             # z = particle[2]
@@ -140,18 +149,19 @@ class Run():
             # psi = particle[5]
 
             # print(x,y,z)
-            particle_pose = get_pose(phi, theta, psi, x, y, z, self.obs_img_pose, self.center_about_true_pose)
+            # particle_pose = get_pose(phi, theta, psi, x, y, z, self.obs_img_pose, self.center_about_true_pose)
             
             # set positions
-            initial_positions[index,:] = [particle_pose[0,3], particle_pose[1,3], particle_pose[2,3]]
+            initial_positions[index,:] = [x,y, z]
 
             # set orientations, create rotation object
-            rots.append(R.from_matrix(particle_pose[0:3,0:3]))
+            rots.append(gt_rotation_obj)
+            # rots.append(R.from_matrix(particle_pose[0:3,0:3]))
             
             # print(initial_particles)
 
-        print("INITIAL POSITION ", initial_positions)
-        print("INITIAL ROT", rots)
+        # print("INITIAL POSITION ", initial_positions)
+        # print("INITIAL ROT", rots)
         return {'position':initial_positions, 'rotation':np.array(rots)}
 
     
@@ -217,7 +227,10 @@ class Run():
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
-            # print(index)
+            if index %10 ==0:
+                # print(f"PART STATE for iteration {iter}:   ",particles_position_before_update[index])
+                pobj = R.from_matrix(particles_rotation_before_update[index])
+                print(f"PART for iteration {iter}:   \n",bobj.as_euler('xyz', degrees=True))
             loss_pose = np.zeros((4,4))
             rot = particles_rotation_before_update[index]
             loss_pose[0:3, 0:3] = rot
@@ -225,11 +238,12 @@ class Run():
             loss_pose[3,3] = 1.0
             loss_poses.append(loss_pose)
 
-        
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img, iter=iter)
         print("Pass losses")
+        print(losses)
+        temp = 1
         for index, particle in enumerate(particles_position_before_update):
-            self.filter.weights[index] = 1/losses[index]
+            self.filter.weights[index] = 1/(losses[index]+temp)
 
         total_nerf_time += nerf_time
 
@@ -292,71 +306,83 @@ if __name__ == "__main__":
     
     # Assume constant time step between trajectory stepping
     for iter in range(len(mcl.cam_states)-1):
-        # new_dir_name = f"NeRF_UAV_simulation/images/Iteration_{iter}"
-        # if not os.path.exists(new_dir_name):
-        #     os.mkdir(new_dir_name)
+        new_dir_name = f"NeRF_UAV_simulation/images/Iteration_{iter}"
+        if not os.path.exists(new_dir_name):
+            os.mkdir(new_dir_name)
 
         base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
         cv2.imshow("img ",base_img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-        # pose_est = mcl.rgb_run(iter, base_img)   
-
-        # # Visualization
-        # est_states[iter] = pose_est[0:3,3].flatten()
-        # gt_states[iter] = mcl.cam_states[iter]
-
-        # est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
-        # est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
-
-        # gt_matrix = gt_states[iter].reshape(4,4)
-        # gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
-        # gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
-           
-        # print(">>>>>>>>>>>>>> ")
-        # print(iteration_count[:iter+1])
-        # # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
-        # print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
-        # print(">>>>>>>>>>>>>> ")
-    
-        # # Create a figure with six subplots (2 rows, 3 columns)
-        # plt.figure(figsize=(12, 6))
-
-        # plt.subplot(2, 3, 1)
-        # plt.plot(iteration_count[:iter+1], np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
-        # plt.title('X error')
-
-        # plt.subplot(2, 3, 2)
-        # plt.plot(iteration_count[:iter+1], np.abs( gt_states[:iter+1,7]-est_states[:iter+1,1]) )
-        # plt.title('Y error')
-
-        # # Plot the third graph in the third subplot
-        # plt.subplot(2, 3, 3)
-        # plt.plot(iteration_count[:iter+1],np.abs(gt_states[:iter+1,11]-est_states[:iter+1,2]) )
-        # plt.title('Z error')
-
-        # # Plot the fourth graph in the fourth subplot
-        # plt.subplot(2, 3, 4)
-        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,0]-gt_euler[:iter+1,0]) )
-        # plt.title('Yaw error')
-
-        # # Plot the fifth graph in the fifth subplot
-        # plt.subplot(2, 3, 5)
-        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,1]-gt_euler[:iter+1,1]))
-        # plt.title('Pitch error')
-
-        # # Plot the sixth graph in the sixth subplot
-        # plt.subplot(2, 3, 6)
-        # plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,2]-gt_euler[:iter+1,2]))
-        # plt.title('Roll error')
-
-        # plt.tight_layout()
-        # file_path = f'./NeRF_UAV_simulation/Plots/plot{iter}.png'
-        # plt.savefig(file_path)
-        # plt.close()
+        brot = mcl.cam_states[iter].reshape(4,4)
+        bobj = R.from_matrix(brot[:3,:3])
+        print(f"BASE EULER for iteration {iter}:   \n",bobj.as_euler('xyz', degrees=True))
         
-        # print('cam_states[iter]',mcl.cam_states[iter])
-        # print('pose est',pose_est)
+        # test_pose = np.array([[ 6.97201566e-01 , 1.11022302e-16 ,-7.16875147e-01, -6.83163640e-01],
+        #                     [-7.16875147e-01 , 1.66533454e-16, -6.97201566e-01 , 7.37852300e-02],q
+        #                     [ 0.00000000e+00 , 1.00000000e+00 , 1.66533454e-16, -2.28330954e-01]]) 
+        
+        # comp_img = mcl.nerf.render_Nerf_image(test_pose[:3,:3], test_pose[:,3],save=False, save_name = "base", iter=iter, particle_number=None) 
+        # cv2.imshow("comp ",comp_img)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        pose_est = mcl.rgb_run(iter, base_img)   
+
+        # Visualization
+        est_states[iter] = pose_est[0:3,3].flatten()
+        gt_states[iter] = mcl.cam_states[iter]
+
+        est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
+        est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
+
+        gt_matrix = gt_states[iter].reshape(4,4)
+        gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
+        gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
+           
+        print(">>>>>>>>>>>>>> ")
+        print(iteration_count[:iter+1])
+        # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
+        print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        print(">>>>>>>>>>>>>> ")
+    
+        # Create a figure with six subplots (2 rows, 3 columns)
+        plt.figure(figsize=(12, 6))
+
+        plt.subplot(2, 3, 1)
+        plt.plot(iteration_count[:iter+1], np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
+        plt.title('X error')
+
+        plt.subplot(2, 3, 2)
+        plt.plot(iteration_count[:iter+1], np.abs( gt_states[:iter+1,7]-est_states[:iter+1,1]) )
+        plt.title('Y error')
+
+        # Plot the third graph in the third subplot
+        plt.subplot(2, 3, 3)
+        plt.plot(iteration_count[:iter+1],np.abs(gt_states[:iter+1,11]-est_states[:iter+1,2]) )
+        plt.title('Z error')
+
+        # Plot the fourth graph in the fourth subplot
+        plt.subplot(2, 3, 4)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,0]-gt_euler[:iter+1,0]) )
+        plt.title('Yaw error')
+
+        # Plot the fifth graph in the fifth subplot
+        plt.subplot(2, 3, 5)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,1]-gt_euler[:iter+1,1]))
+        plt.title('Pitch error')
+
+        # Plot the sixth graph in the sixth subplot
+        plt.subplot(2, 3, 6)
+        plt.plot(iteration_count[:iter+1],np.abs(est_euler[:iter+1,2]-gt_euler[:iter+1,2]))
+        plt.title('Roll error')
+
+        plt.tight_layout()
+        file_path = f'./NeRF_UAV_simulation/Plots/plot{iter}.png'
+        plt.savefig(file_path)
+        plt.close()
+        
+        print('cam_states[iter]',mcl.cam_states[iter])
+        print('pose est',pose_est)
 
     print("########################Done########################")

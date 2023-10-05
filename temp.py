@@ -16,14 +16,17 @@ from torchvision.utils import save_image
 from scipy.spatial.transform import Rotation as R
 import cv2
 
-A = np.array([[ 6.33935139e-01 , 1.11022302e-16, -7.73386216e-01 ],
-              [-7.73386216e-01,  5.55111512e-17, -6.33935139e-01 ],
-              [ 0.00000000e+00,  1.00000000e+00  ,1.66533454e-16 ]])
-roat = R.from_matrix(A)
+base = np.array( [[ 6.65833834e-01 , 1.66533454e-16, -7.46100064e-01],
+ [-7.46100064e-01 , 5.55111512e-17, -6.65833834e-01 ],
+ [-5.55111512e-17 , 1.00000000e+00,  1.66533454e-16]])
+roat = R.from_matrix(base)
+print("BASE",roat.as_euler('xyz', degrees=True))
 
-print(roat.as_euler('xyz'))
-
-
+comp = np.array( [[ 0.53549892 ,-0.12476546,  0.83526911],
+ [-0.84291429, -0.14021918 , 0.51945556 ],
+ [ 0.05231064, -0.98222816, -0.18025381  ]])
+roat = R.from_matrix(comp)
+print("comp",roat.as_euler('xyz', degrees=True))
 # YAW ........ -0.8841654663472056
 
 # FINAL C2W ...........
