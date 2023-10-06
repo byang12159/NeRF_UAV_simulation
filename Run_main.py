@@ -15,10 +15,10 @@ from scipy.spatial.transform import Rotation as R
 import os
 import torch 
 class Run():
-    def __init__(self, camera_path, nerf_file_path):
+    def __init__(self, camera_path, nerf_file_path, width = 320, height = 320, fov = 50):
 
         # self.nerfimage = Nerf_image(nerf_file_path)
-        self.nerf = NeRF(nerf_file_path)
+        self.nerf = NeRF(nerf_file_path, width, height, fov)
 
         ####################### Import camera path trajectory json #######################
         with open(camera_path, 'r') as file:
@@ -39,17 +39,33 @@ class Run():
         self.nerfH = 320
         ####################### Initialize Variables #######################
 
+        initial_rotation = self.cam_states[0].reshape(4,4)
+        print("initalrotaion",initial_rotation)
+        initial_rotation_obj = R.from_matrix(initial_rotation[:3,:3])
+        initial_rotation_eul = initial_rotation_obj.as_euler('xyz')
+        self.initialization_center = [self.cam_states[0][3],self.cam_states[0][7],self.cam_states[0][11],initial_rotation_eul[0],initial_rotation_eul[1],initial_rotation_eul[2]]
         # bounds for particle initialization, meters + degrees
-        self.min_bounds = {'px':-0.5,'py':-0.5,'pz':0.0,'rz':-2.5,'ry':-179.0,'rx':-2.5}
-        self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':2.5,'ry':179.0,'rx':2.5}
+        # Isseus pitch and roll
+        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-1.5,'ry':-1.5,'rx':-1.5}
+        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':1.5,'ry':1.5,'rx':1.5}
 
-        self.num_particles = 25
+        # Y 14, P13, R25
+        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.5,'ry':-0.5,'rx':-0.5}
+        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.5,'ry':0.5,'rx':0.5}
+
+        # Good              
+        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.2,'ry':-0.2,'rx':-0.2}
+        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.2,'ry':0.2,'rx':0.2}
+
+        self.min_bounds = {'px':-0.5,'py':-0.5,'pz':-0.5,'rz':-0.01,'ry':-0.01,'rx':-0.01}
+        self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':0.01,'ry': 0.01,'rx': 0.01}
+
+        self.num_particles = 400
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
         self.all_pose_est = []
-        
-        self.rgb_input_count = 0
+
 
         self.use_convergence_protection = True
         self.convergence_noise = 0.2
@@ -68,25 +84,39 @@ class Run():
         self.get_initial_distribution()
 
         # add initial pose estimate before 1st update step
-        position_est = self.filter.compute_weighted_position_average()
+        position_est = self.filter.compute_simple_position_average()
         rot_est = self.filter.compute_simple_rotation_average()
-        pose_est = np.eye(4)  # Initialize as identity matrix
-        pose_est[:3, :3] = rot_est  # Set the upper-left 3x3 submatrix as the rotation matrix
-        pose_est[:3, 3] = position_est  # Set the rightmost column as the translation vector
+        pose_est = np.zeros(3+4)  # Initialize as identity matrix
+        pose_est[:3] = position_est 
+        pose_est[3:] = rot_est
         self.all_pose_est.append(pose_est)
         
-    def mat3d(self, x,y,z):
+    def center_euler(self, euler_angles):
+        # Ensure the differences are within the range of -pi to pi
+        yaw_diff = (yaw_diff + np.pi) % (2 * np.pi) - np.pi
+        pitch_diff = (pitch_diff + np.pi) % (2 * np.pi) - np.pi
+        roll_diff = (roll_diff + np.pi) % (2 * np.pi) - np.pi
+
+        return [yaw_diff, pitch_diff, roll_diff]
+
+    def mat3d(self):
+        traj = np.zeros((len(self.cam_states),3))
+        for i in range(len(self.cam_states)):
+            traj[i][0] = self.cam_states[i][4]
+            traj[i][1] = self.cam_states[i][7]
+            traj[i][2] = self.cam_states[i][11]
+
         # Create a 3D figure
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
-        ax.scatter(x,y,z,'*')
+        ax.scatter(traj[:,0],traj[:,1],traj[:,2],'*')
         ax.set_xlabel('X Label')
         ax.set_ylabel('Y Label')
         ax.set_zlabel('Z Label')
-        ax.set_xlim(-5, 30)  # Set X-axis limits
-        ax.set_ylim(-5, 30)  # Set Y-axis limits
-        ax.set_zlim(-5, 30)  # Set Z-axis limits
+        ax.set_xlim(-5, 5)  # Set X-axis limits
+        ax.set_ylim(-5, 5)  # Set Y-axis limits
+        ax.set_zlim(-5, 5)  # Set Z-axis limits
         # Show the plot
         plt.show()
 
@@ -102,8 +132,7 @@ class Run():
 
         # Dict of position + rotation, with position as np.array(300x6)
         self.initial_particles = self.set_initial_particles()
-        # self.mat3d(self.initial_particles.get('position')[:,0],self.initial_particles.get('position')[:,1],self.initial_particles.get('position')[:,2])
-
+        
         # Initiailize particle filter class with inital particles
         self.filter = ParticleFilter(self.initial_particles)
 
@@ -111,57 +140,94 @@ class Run():
     def set_initial_particles(self):
         initial_positions = np.zeros((self.num_particles, 3))
         rots = []
+
         for index, particle in enumerate(self.initial_particles_noise):
-            # Initialize at origin location
-            i = self.cam_states[0]
-            # future = self.cam_states[1]
-            # f_x = future[3]
-            # f_y = future[7]
-            
-            # yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
-            
-            # camera_to_world = np.array(i[:-4]).reshape((3,4))
-            # rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
-            # camera_to_world[:,:-1] = rpy.as_matrix()
-            # x = camera_to_world[0][3]
-            # y = camera_to_world[1][3]
-            # z = camera_to_world[2][3]
-            x = i[3]
-            y = i[7]
-            z = i[11]
-            rot1 = i.reshape(4,4)
-            rot = rot1[:3,:3]
-            gt_rotation_obj  = R.from_matrix(rot)
-            gt_euler  =  gt_rotation_obj.as_euler('xyz')
+            # # # For Testing: Initialize at camera location
+            # i = self.cam_states[0]
+            # x = i[3]
+            # y = i[7]
+            # z = i[11]
+            # rot1 = i.reshape(4,4)
+            # rot = rot1[:3,:3]
+            # gt_rotation_obj  = R.from_matrix(rot)
+            # gt_euler  =  gt_rotation_obj.as_euler('xyz')
             # phi = gt_euler[0]
             # theta = gt_euler[1]
             # psi = gt_euler[2]
-            phi = gt_euler[0]
-            theta = gt_euler[1]
-            psi = gt_euler[2]
 
-            # print("initialzia \n",rot1)
-            # x = particle[0]
-            # y = particle[1]
-            # z = particle[2]
+
+
+            # # For Testing: Initialize at camera location
+            # i = self.cam_states[0]
+            # x = i[3]+particle[0]
+            # y = i[7]+particle[1]
+            # z = i[11]+particle[2]
+            # rot1 = i.reshape(4,4)
+            # rot = rot1[:3,:3]
+            # gt_rotation  = R.from_matrix(rot)
+            # gt_euler  =  gt_rotation.as_euler('xyz')
+            # phi = gt_euler[0]+ np.pi/4
+            # theta = gt_euler[1]
+            # psi = gt_euler[2]
+            # if index < 10:
+            #     print("ROTS1",phi,theta,psi)
+            # gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
+
+            # For random particles within given bound
+            x = self.initialization_center[0] + particle[0]
+            y = self.initialization_center[1] + particle[1]
+            z = self.initialization_center[2] + particle[2]
+            phi   = self.initialization_center[3]+ particle[3]
+            theta = self.initialization_center[4]+ particle[4]
+            psi   = self.initialization_center[5]+ particle[5]
+            gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
+
+            # # For random particles within given bound
+            # x = particle[0]+self.initialization_center[0]
+            # y = particle[1]+self.initialization_center[1]
+            # z = particle[2]+self.initialization_center[2]
             # phi = particle[3]
             # theta = particle[4]
             # psi = particle[5]
+            # gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
 
-            # print(x,y,z)
-            # particle_pose = get_pose(phi, theta, psi, x, y, z, self.obs_img_pose, self.center_about_true_pose)
-            
             # set positions
-            initial_positions[index,:] = [x,y, z]
-
+            initial_positions[index,:] = [x,y,z]
             # set orientations, create rotation object
             rots.append(gt_rotation_obj)
-            # rots.append(R.from_matrix(particle_pose[0:3,0:3]))
-            
-            # print(initial_particles)
+    
+        
+        # Create a 3D plot
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        for index, particle in enumerate(self.initial_particles_noise):
+            Rotating = rots[index].as_matrix()
+            vector = np.dot(Rotating, np.array([1, 0, 0]))  # Unit vector along the x-axis
+            ax.quiver(initial_positions[index][0], initial_positions[index][1], initial_positions[index][2], vector[0], vector[1], vector[2])
 
-        # print("INITIAL POSITION ", initial_positions)
-        # print("INITIAL ROT", rots)
+        # Add camera initialization
+        initial_cam = self.cam_states[0].reshape(4,4)
+        vector = np.dot(initial_cam[:3,:3], np.array([1, 0, 0]))  # Unit vector along the x-axis
+        ax.quiver(initial_cam[0][3], initial_cam[1][3], initial_cam[2][3], vector[0], vector[1], vector[2], color='r')
+
+        # Set axis labels
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        # Set axis limits
+        ax.set_xlim([-2, 2])
+        ax.set_ylim([-2, 2])
+        ax.set_zlim([-2, 2])
+
+        # Add a legend
+        ax.legend()
+
+        # Show the 3D plot
+        plt.show()
+
+        print("INITIAL POSITION ", initial_positions)
+        print("INITIAL ROT", rots)
         return {'position':initial_positions, 'rotation':np.array(rots)}
 
     
@@ -171,26 +237,8 @@ class Run():
         movement = self.control.simulate(x0, goal, dt)
         pass
 
-    def publish_pose_est(self, pose_est, img_timestamp = None):
-        print("Pose Est",pose_est.shape)
-        pose_est = self.move()
- 
-        position_est = pose_est[:3, 3]
-        rot_est = R.as_quat(pose_est[:3, :3])
 
-        # populate msg with pose information
-        pose_est.pose.pose.position.x = position_est[0]
-        pose_est.pose.pose.position.y = position_est[1]
-        pose_est.pose.pose.position.z = position_est[2]
-        pose_est.pose.pose.orientation.w = rot_est[0]
-        pose_est.pose.pose.orientation.x = rot_est[1]
-        pose_est.pose.pose.orientation.y = rot_est[2]
-        pose_est.pose.pose.orientation.z = rot_est[3]
-        # print(pose_est_gtsam.rotation().ypr())
-
-        # publish pose
-        self.pose_pub.publish(pose_est)
-
+    # def vector_visualization(self, )
     def odometry_update(self,state0, state1):
         state_difference = state1-state0
         rot0 = R.from_matrix(state0[:3,:3])
@@ -203,6 +251,12 @@ class Run():
 
             peul = self.filter.particles['rotation'][i].as_euler('xyz')
             peul += diffeul
+
+            # Ensure the differences are within the range of -pi to pi
+            peul[0] = (peul[0] + np.pi) % (2 * np.pi) - np.pi
+            peul[1] = (peul[1] + np.pi) % (2 * np.pi) - np.pi
+            peul[2] = (peul[2] + np.pi) % (2 * np.pi) - np.pi
+
             prot = R.from_euler('xyz',peul)
             self.filter.particles['rotation'][i] = prot
         
@@ -211,11 +265,10 @@ class Run():
     def rgb_run(self,iter, img,msg=None, get_rays_fn=None, render_full_image=False):
         print("processing image")
         start_time = time.time()
-        self.rgb_input_count += 1
 
         # make copies to prevent mutations
         particles_position_before_update = np.copy(self.filter.particles['position'])
-        particles_rotation_before_update = [i.as_matrix() for i in self.filter.particles['rotation']]
+        particles_rotation_before_update = np.copy(self.filter.particles['rotation'])
 
         # resize input image so it matches the scale that NeRF expects
         img = cv2.resize(img, (int(self.nerfW), int(self.nerfH)))
@@ -235,12 +288,8 @@ class Run():
 
         loss_poses = []
         for index, particle in enumerate(particles_position_before_update):
-            if index %10 ==0:
-                # print(f"PART STATE for iteration {iter}:   ",particles_position_before_update[index])
-                pobj = R.from_matrix(particles_rotation_before_update[index])
-                print(f"PART EULER for iteration {iter}:   \n",pobj.as_euler('xyz', degrees=True))
             loss_pose = np.zeros((4,4))
-            rot = particles_rotation_before_update[index]
+            rot = particles_rotation_before_update[index].as_matrix()
             loss_pose[0:3, 0:3] = rot
             loss_pose[0:3,3] = particle[0:3]
             loss_pose[3,3] = 1.0
@@ -248,8 +297,8 @@ class Run():
 
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img, iter=iter)
         print("Pass losses")
-        print(losses)
-        temp = 1
+        # print("Loss Values" ,losses)
+        temp = 0
         for index, particle in enumerate(particles_position_before_update):
             self.filter.weights[index] = 1/(losses[index]+temp)
 
@@ -259,13 +308,41 @@ class Run():
         self.filter.update()
         self.num_updates += 1
         
-        position_est = self.filter.compute_weighted_position_average()
-        rot_est = self.filter.compute_simple_rotation_average()
-        pose_est = np.eye(4)  # Initialize as identity matrix
-        pose_est[:3, :3] = rot_est  # Set the upper-left 3x3 submatrix as the rotation matrix
-        pose_est[:3, 3] = position_est  # Set the rightmost column as the translation vector
+        position_est = self.filter.compute_simple_position_average()
+        quat_est = self.filter.compute_simple_rotation_average()
+        pose_est = np.zeros(3+4)  # Initialize as identity matrix
+        pose_est[:3] = position_est 
+        pose_est[3:] = quat_est 
         self.all_pose_est.append(pose_est)
-        
+
+
+        # # Create a 3D plot
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # for index in range(self.num_particles):
+        #     Rotating = self.filter.particles['rotation'][index].as_matrix()
+        #     vector = np.dot(Rotating, np.array([1, 0, 0]))  # Unit vector along the x-axis
+        #     ax.quiver(self.filter.particles['position'][index][0], self.filter.particles['position'][index][1], self.filter.particles['position'][index][2], vector[0], vector[1], vector[2])
+
+        # # Add camera 
+        # initial_cam = self.cam_states[iter].reshape(4,4)
+        # vector = np.dot(initial_cam[:3,:3], np.array([1, 0, 0]))  # Unit vector along the x-axis
+        # ax.quiver(initial_cam[0][3], initial_cam[1][3], initial_cam[2][3], vector[0], vector[1], vector[2], color='r')
+
+        # # Pose est 
+        # estimated_rot = R.from_quat(pose_est[3:])
+        # vector = np.dot(estimated_rot.as_matrix(), np.array([1, 0, 0]))  # Unit vector along the x-axis
+        # ax.quiver(pose_est[0], pose_est[1], pose_est[2], vector[0], vector[1], vector[2], color='g')
+
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+        # # ax.set_xlim([-2, 2])
+        # # ax.set_ylim([-2, 2])
+        # # ax.set_zlim([-2, 2])
+        # ax.legend()
+        # plt.show()
+
         # Update odometry step
         current_state = self.cam_states[iter].reshape(4,4)
         next_state = self.cam_states[iter+1].reshape(4,4)
@@ -278,33 +355,15 @@ class Run():
 
         return pose_est
 
-import nerfstudio
-from nerfstudio.models.base_model import Model, ModelConfig
-from nerfstudio.models.nerfacto import NerfactoModel, NerfactoModelConfig
-from nerfstudio.cameras.cameras import Cameras, CameraType
-from nerfstudio.data.scene_box import SceneBox
-import torch 
-import numpy as np 
-import json 
-import os 
-from nerfstudio.utils.eval_utils import eval_setup
-from pathlib import Path
-import yaml
-import matplotlib.pyplot as plt 
-from nerfstudio.utils import colormaps
-from torchvision.utils import save_image
-from scipy.spatial.transform import Rotation
-import copy
-import cv2
 
 if __name__ == "__main__":
 
     camera_path = 'camera_path.json'
     nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
 
-    mcl = Run(camera_path,nerf_file_path)      
+    mcl = Run(camera_path,nerf_file_path, 80, 80, 50)      
 
- 
+    mcl.mat3d()
     # Initialize Drone Position
     est_states = np.zeros((len(mcl.cam_states) ,3))
     gt_states  = np.zeros((len(mcl.cam_states) ,16))
@@ -323,28 +382,20 @@ if __name__ == "__main__":
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
 
-        brot = mcl.cam_states[iter].reshape(4,4)
-        bobj = R.from_matrix(brot[:3,:3])
-        print(f"BASE EULER for iteration {iter}:   \n",bobj.as_euler('xyz', degrees=True))
-        
+    
         pose_est = mcl.rgb_run(iter, base_img)   
 
-        # Visualization
-        est_states[iter] = pose_est[0:3,3].flatten()
+        ########################## Error Visualization ##########################
+        est_states[iter] = pose_est[0:3]
         gt_states[iter] = mcl.cam_states[iter]
 
-        est_rotation_obj = R.from_matrix(pose_est[0:3,0:3])
+        est_rotation_obj = R.from_quat(pose_est[3:])
         est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
 
         gt_matrix = gt_states[iter].reshape(4,4)
-        gt_rotation_obj  = R.from_matrix(gt_matrix[0:3,0:3])
+        gt_rotation_obj  = mcl.nerf.base_rotations[iter]
         gt_euler[iter]  =  gt_rotation_obj.as_euler('xyz', degrees=True)
            
-        print(">>>>>>>>>>>>>> ")
-        print(iteration_count[:iter+1])
-        # print([np.linalg.norm(gt_states[:iter+1,3]-est_states[:iter+1,0], axis =1)])
-        print(np.abs(gt_states[:iter+1,3]-est_states[:iter+1,0]))
-        print(">>>>>>>>>>>>>> ")
     
         # Create a figure with six subplots (2 rows, 3 columns)
         plt.figure(figsize=(12, 6))
@@ -382,7 +433,7 @@ if __name__ == "__main__":
         plt.savefig(file_path)
         plt.close()
         
-        print('cam_states[iter]',mcl.cam_states[iter])
-        print('pose est',pose_est)
+        print(f'cam_states iteration {iter}:\n',mcl.cam_states[iter])
+        print(f'pose est iteration {iter}:\n',pose_est)
 
     print("########################Done########################")

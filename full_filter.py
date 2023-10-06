@@ -37,7 +37,7 @@ import matplotlib.image
 
 class NeRF:
     
-    def __init__(self,path):
+    def __init__(self,path, width, height, fov):
         #  def __init__(self, nerf_params):
         # Parameters
         # self.output_dir = './output/'
@@ -46,7 +46,7 @@ class NeRF:
         # self.obs_img_num = nerf_params['obs_img_num']
         self.batch_size = 32 # number of pixels to use for measurement points
         self.factor = 4 # image down-sample factor
-
+        self.base_rotations = []
         # self.near = nerf_params['near']
         # self.far = nerf_params['far']
         # self.spherify = False
@@ -77,12 +77,12 @@ class NeRF:
         )
         
         self.model = pipeline.model
-        self.fx = (320.0/2)/(np.tan(np.deg2rad(50)/2))
-        self.fy = (320.0/2)/(np.tan(np.deg2rad(50)/2))
-        self.cx = 160.0
-        self.cy = 160.0
-        self.nerfW = 320
-        self.nerfH = 320
+        self.fx = (width/2)/(np.tan(np.deg2rad(fov)/2))
+        self.fy = (height/2)/(np.tan(np.deg2rad(fov)/2))
+        self.cx = width/2
+        self.cy = height/2
+        self.nerfW = width
+        self.nerfH = height
         self.camera_type  = CameraType.PERSPECTIVE
 
         self.focal = self.fx
@@ -129,7 +129,7 @@ class NeRF:
         camera_to_world = np.zeros((3,4))
         camera_to_world[:,-1] = position
         camera_to_world[:,:-1] = rpy.as_matrix()
-        print("NORMAL RENDER C2W ...........\n",camera_to_world)
+        # print("NORMAL RENDER C2W ...........\n",camera_to_world)
         camera_to_world = torch.FloatTensor( camera_to_world )
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
         camera = camera.to('cuda')
@@ -154,13 +154,14 @@ class NeRF:
         f_y = future[7]
         
         yaw = np.arctan2( f_y - i[7],f_x - i[3]  ) - np.pi/2
-        print("YAW ........",yaw)
+        # print("YAW ........",yaw)
         camera_to_world = np.array(i[:-4]).reshape((3,4))
         # print("1c2w",camera_to_world)
         rpy = R.from_euler('xyz', [np.deg2rad(90), 0, yaw])
+        self.base_rotations.append(rpy)
         # print("rpy",rpy.as_matrix())
         camera_to_world[:,:-1] = rpy.as_matrix()
-        print("SIMPLE RENDER C2W ...........\n",camera_to_world)
+        # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
         camera_to_world = torch.FloatTensor( camera_to_world )
 
         camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
@@ -187,16 +188,8 @@ class NeRF:
 
         for i, particle in enumerate(particle_poses):
             print(i)
-            if i == 1:
-                # pobj = R.from_matrix(particle[0:3,0:3])
-                # print(f"PART for iteration:   \n",pobj.as_euler('xyz', degrees=True))
-                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
-                # cv2.imshow("comp ",compare_img)
-                # cv2.waitKey(0)
-                # cv2.destroyAllWindows()
-            else:
-                compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
-
+        
+            compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
             compare_tensor = torch.tensor(compare_img_points)
 

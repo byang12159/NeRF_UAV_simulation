@@ -143,7 +143,7 @@ def _minify(basedir, factors=[], resolutions=[]):
         if os.path.exists(imgdir):
             continue
 
-        print('Minifying', r, basedir)
+        # print('Minifying', r, basedir)
 
         os.makedirs(imgdir)
         check_output('cp {}/* {}'.format(imgdir_orig, imgdir), shell=True)

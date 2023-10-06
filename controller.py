@@ -38,7 +38,7 @@ class Controller:
         # Q[11,11] = 0.01
         R = np.diag([1., 1., 1.])
         self.K, _, _ = lqr(A, B, Q, R)
-        print(self.K)
+        # print(self.K)
 
     ####################### The controller ######################
     def u(self, x, goal):
