@@ -57,8 +57,11 @@ class Run():
         # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.2,'ry':-0.2,'rx':-0.2}
         # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.2,'ry':0.2,'rx':0.2}
 
-        self.min_bounds = {'px':-0.5,'py':-0.5,'pz':-0.5,'rz':-0.01,'ry':-0.01,'rx':-0.01}
-        self.max_bounds = {'px':0.5,'py':0.5,'pz':0.5,'rz':0.01,'ry': 0.01,'rx': 0.01}
+        self.min_bounds = {'px':-0.1,'py':-0.1,'pz':-0.1,'rz':-0.1,'ry':-0.1,'rx':-0.1}
+        self.max_bounds = {'px':0.1,'py':0.1,'pz':0.1,'rz':0.1,'ry': 0.1,'rx': 0.1}
+
+        self.min_bounds_odometry = {'px':-0.004,'py':-0.004,'pz':-0.004,'rz':-0.001,'ry':-0.001,'rx':-0.001}
+        self.max_bounds_odometry = {'px':0.004,'py':0.004,'pz':0.004,'rz':0.001,'ry': 0.001,'rx': 0.001}
 
         self.num_particles = 400
         
@@ -246,11 +249,21 @@ class Run():
         eul0 = rot0.as_euler('xyz')
         eul1 = rot1.as_euler('xyz')
         diffeul = eul1-eul0
+
+        odometry_particle_noise = np.random.uniform(np.array(
+            [self.min_bounds['px'], self.min_bounds['py'], self.min_bounds['pz'], self.min_bounds['rz'], self.min_bounds['ry'], self.min_bounds['rx']]),
+            np.array([self.max_bounds['px'], self.max_bounds['py'], self.max_bounds['pz'], self.max_bounds['rz'], self.max_bounds['ry'], self.max_bounds['rx']]),
+            size = (self.num_particles, 6))
+        
+
         for i in range(self.num_particles):
-            self.filter.particles['position'][i] += [state_difference[0][3], state_difference[1][3], state_difference[2][3]]
+            odometry_particle_noise_translation = np.random.normal(0.0, 0.005,3)
+            odometry_particle_noise_rotation = np.random.normal(0.0, 0.005,3)
+
+            self.filter.particles['position'][i] += [state_difference[0][3]+odometry_particle_noise_translation[0], state_difference[1][3]+odometry_particle_noise_translation[0], state_difference[2][3]+odometry_particle_noise_translation[0]]
 
             peul = self.filter.particles['rotation'][i].as_euler('xyz')
-            peul += diffeul
+            peul = peul + diffeul + odometry_particle_noise_rotation
 
             # Ensure the differences are within the range of -pi to pi
             peul[0] = (peul[0] + np.pi) % (2 * np.pi) - np.pi
