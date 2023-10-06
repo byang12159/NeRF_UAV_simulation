@@ -44,7 +44,7 @@ class NeRF:
         # self.data_dir = nerf_params['data_dir']
         # self.model_name = nerf_params['model_name']
         # self.obs_img_num = nerf_params['obs_img_num']
-        self.batch_size = 32 # number of pixels to use for measurement points
+        self.batch_size = 64 # number of pixels to use for measurement points
         self.factor = 4 # image down-sample factor
         self.base_rotations = []
         # self.near = nerf_params['near']

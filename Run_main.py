@@ -257,8 +257,8 @@ class Run():
         
 
         for i in range(self.num_particles):
-            odometry_particle_noise_translation = np.random.normal(0.0, 0.005,3)
-            odometry_particle_noise_rotation = np.random.normal(0.0, 0.005,3)
+            odometry_particle_noise_translation = np.random.normal(0.0, 0.001,3)
+            odometry_particle_noise_rotation = np.random.normal(0.0, 0.001,3)
 
             self.filter.particles['position'][i] += [state_difference[0][3]+odometry_particle_noise_translation[0], state_difference[1][3]+odometry_particle_noise_translation[0], state_difference[2][3]+odometry_particle_noise_translation[0]]
 

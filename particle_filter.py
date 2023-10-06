@@ -73,8 +73,18 @@ class ParticleFilter:
     
         #resample
 
+        out = 20 # Number of outlier particles chosen
+        # choice = np.random.choice(self.num_particles, self.num_particles-out, p = self.weights, replace=True)
         choice = np.random.choice(self.num_particles, self.num_particles, p = self.weights, replace=True)
         temp = {'position':np.copy(self.particles['position'])[choice, :], 'rotation':np.copy(self.particles['rotation'])[choice]}
+
+        # Add some particles spread 
+        # for i in range(out):
+        #     resample_particle_noise_translation = np.random.normal(0.0, 0.05,3)
+        #     resample_particle_noise_rotation = np.random.normal(0.0, 0.05,3)
+        #     temp['position'][i] += resample_particle_noise_translation
+
+
         self.particles = temp
 
 
