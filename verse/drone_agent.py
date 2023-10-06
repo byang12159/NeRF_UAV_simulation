@@ -225,7 +225,7 @@ class DroneAgent(BaseAgent):
         return trajectory
 
 if __name__ == "__main__":
-    fn = os.path.join(script_dir, '../NeRF_UAV_simulation/camera_path.json')
+    fn = os.path.join(script_dir, '../camera_path.json')
     with open(fn, 'r') as f:
         data = json.load(f)
     cam_data = data.get('camera_path')
