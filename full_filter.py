@@ -147,6 +147,29 @@ class NeRF:
 
         return img
     
+    def render_Nerf_image_base(self, cam_state, save, save_name, iter, particle_number):
+        rpy = R.from_matrix(cam_state[:3,:3])
+        self.base_rotations.append(rpy)
+        
+        camera_to_world = torch.FloatTensor( cam_state )
+
+        camera = Cameras(camera_to_worlds = camera_to_world, fx = self.fx, fy = self.fy, cx = self.cx, cy = self.cy, width=self.nerfW, height=self.nerfH, camera_type=self.camera_type)
+        camera = camera.to('cuda')
+        ray_bundle = camera.generate_rays(camera_indices=0, aabb_box=None)
+
+        with torch.no_grad():
+            tmp = self.model.get_outputs_for_camera_ray_bundle(ray_bundle)
+
+        img = tmp['rgb']
+        img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+
+        if save:
+            output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
+            cv2.imwrite(output_dir, img)
+
+        return img
+
+
     def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
         i = state_now
         future = state_future

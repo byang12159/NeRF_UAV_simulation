@@ -14,6 +14,9 @@ from controller import Controller
 from scipy.spatial.transform import Rotation as R
 import os
 import torch 
+import pickle 
+import copy 
+
 class Run():
     def __init__(self, camera_path, nerf_file_path, width = 320, height = 320, fov = 50):
 
@@ -57,8 +60,8 @@ class Run():
         # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.2,'ry':-0.2,'rx':-0.2}
         # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.2,'ry':0.2,'rx':0.2}
 
-        self.min_bounds = {'px':-0.1,'py':-0.1,'pz':-0.1,'rz':-0.1,'ry':-0.1,'rx':-0.1}
-        self.max_bounds = {'px':0.1,'py':0.1,'pz':0.1,'rz':0.1,'ry': 0.1,'rx': 0.1}
+        self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.01,'ry':-0.01,'rx':-0.01}
+        self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.01,'ry': 0.01,'rx': 0.01}
 
         self.min_bounds_odometry = {'px':-0.004,'py':-0.004,'pz':-0.004,'rz':-0.001,'ry':-0.001,'rx':-0.001}
         self.max_bounds_odometry = {'px':0.004,'py':0.004,'pz':0.004,'rz':0.001,'ry': 0.001,'rx': 0.001}
@@ -93,6 +96,8 @@ class Run():
         pose_est[:3] = position_est 
         pose_est[3:] = rot_est
         self.all_pose_est.append(pose_est)
+
+        self.last_state = None
         
     def center_euler(self, euler_angles):
         # Ensure the differences are within the range of -pi to pi
@@ -200,34 +205,34 @@ class Run():
             rots.append(gt_rotation_obj)
     
         
-        # Create a 3D plot
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        for index, particle in enumerate(self.initial_particles_noise):
-            Rotating = rots[index].as_matrix()
-            vector = np.dot(Rotating, np.array([1, 0, 0]))  # Unit vector along the x-axis
-            ax.quiver(initial_positions[index][0], initial_positions[index][1], initial_positions[index][2], vector[0], vector[1], vector[2])
+        # # Create a 3D plot
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # for index, particle in enumerate(self.initial_particles_noise):
+        #     Rotating = rots[index].as_matrix()
+        #     vector = np.dot(Rotating, np.array([1, 0, 0]))  # Unit vector along the x-axis
+        #     ax.quiver(initial_positions[index][0], initial_positions[index][1], initial_positions[index][2], vector[0], vector[1], vector[2])
 
-        # Add camera initialization
-        initial_cam = self.cam_states[0].reshape(4,4)
-        vector = np.dot(initial_cam[:3,:3], np.array([1, 0, 0]))  # Unit vector along the x-axis
-        ax.quiver(initial_cam[0][3], initial_cam[1][3], initial_cam[2][3], vector[0], vector[1], vector[2], color='r')
+        # # Add camera initialization
+        # initial_cam = self.cam_states[0].reshape(4,4)
+        # vector = np.dot(initial_cam[:3,:3], np.array([1, 0, 0]))  # Unit vector along the x-axis
+        # ax.quiver(initial_cam[0][3], initial_cam[1][3], initial_cam[2][3], vector[0], vector[1], vector[2], color='r')
 
-        # Set axis labels
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+        # # Set axis labels
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
 
-        # Set axis limits
-        ax.set_xlim([-2, 2])
-        ax.set_ylim([-2, 2])
-        ax.set_zlim([-2, 2])
+        # # Set axis limits
+        # ax.set_xlim([-2, 2])
+        # ax.set_ylim([-2, 2])
+        # ax.set_zlim([-2, 2])
 
-        # Add a legend
-        ax.legend()
+        # # Add a legend
+        # ax.legend()
 
-        # Show the 3D plot
-        plt.show()
+        # # Show the 3D plot
+        # plt.show()
 
         print("INITIAL POSITION ", initial_positions)
         print("INITIAL ROT", rots)
@@ -275,7 +280,8 @@ class Run():
         
         print("Finish odometry update")
 
-    def rgb_run(self,iter, img,msg=None, get_rays_fn=None, render_full_image=False):
+    def rgb_run(self,iter, img, current_state, msg=None, get_rays_fn=None, render_full_image=False):
+        self.odometry_update(self.last_state,current_state)
         print("processing image")
         start_time = time.time()
 
@@ -357,9 +363,8 @@ class Run():
         # plt.show()
 
         # Update odometry step
-        current_state = self.cam_states[iter].reshape(4,4)
-        next_state = self.cam_states[iter+1].reshape(4,4)
-        self.odometry_update(current_state,next_state)
+        # current_state = self.cam_states[iter].reshape(4,4)
+        # next_state = self.cam_states[iter+1].reshape(4,4)
         # self.publish_pose_est(pose_est)
 
 
@@ -368,7 +373,34 @@ class Run():
 
         return pose_est
 
+    def step(self, state, flag = False):
+        cam2world = np.zeros((3,4))
+        cam2world[:,3] = state[:3]
+        if not flag:
+            rot_mat = R.from_euler('xyz',[state[3]+np.pi/2, state[4], state[5]-np.pi/2]).as_matrix()
+        else:
+            rot_mat = R.from_euler('xyz',[state[3], state[4], state[5]]).as_matrix()
+        cam2world[:3,:3] = rot_mat
 
+        base_img = self.nerf.render_Nerf_image_base(cam2world,save=False, save_name = "base", iter=iter, particle_number=None)
+        # cv2.imshow("img ",base_img)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+        tmp = np.vstack((cam2world, np.array([[0,0,0,1]])))
+        if self.last_state is None:
+            self.last_state = copy.deepcopy(tmp)
+        pose_est = self.rgb_run(iter, base_img, tmp) 
+        self.last_state = copy.deepcopy(tmp)
+        pos = pose_est[:3]
+        rpy = R.from_quat(pose_est[3:]).as_euler('xyz')
+        if not flag:
+            res = np.array([pos[0], pos[1], pos[2], rpy[0]-np.pi/2, rpy[1], rpy[2]+np.pi/2])
+        else:
+            res = np.array([pos[0], pos[1], pos[2], rpy[0], rpy[1], rpy[2]])
+            
+        return res
+ 
 if __name__ == "__main__":
 
     camera_path = './NeRF_UAV_simulation/camera_path.json'
@@ -376,7 +408,7 @@ if __name__ == "__main__":
 
     mcl = Run(camera_path,nerf_file_path, 80, 80, 50)      
 
-    mcl.mat3d()
+    # mcl.mat3d()
     # Initialize Drone Position
     est_states = np.zeros((len(mcl.cam_states) ,3))
     gt_states  = np.zeros((len(mcl.cam_states) ,16))
@@ -389,20 +421,23 @@ if __name__ == "__main__":
         new_dir_name = f"NeRF_UAV_simulation/images/Iteration_{iter}"
         if not os.path.exists(new_dir_name):
             os.mkdir(new_dir_name)
-
-        base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
-        # cv2.imshow("img ",base_img)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        cam_states = np.array(mcl.cam_states[iter]).reshape((4,4))
+        rpy = R.from_matrix(cam_states[0:3, 0:3]).as_euler('xyz')
+        state = np.concatenate((cam_states[:,3], rpy))
+        # base_img = mcl.nerf.render_Nerf_image_simple(mcl.cam_states[iter],mcl.cam_states[iter+1],save=False, save_name = "base", iter=iter, particle_number=None)
+        # # cv2.imshow("img ",base_img)
+        # # cv2.waitKey(0)
+        # # cv2.destroyAllWindows()
 
     
-        pose_est = mcl.rgb_run(iter, base_img)   
+        # pose_est = mcl.rgb_run(iter, base_img)   
+        pose_est = mcl.step(state, flag = True)
 
         ########################## Error Visualization ##########################
         est_states[iter] = pose_est[0:3]
         gt_states[iter] = mcl.cam_states[iter]
 
-        est_rotation_obj = R.from_quat(pose_est[3:])
+        est_rotation_obj = R.from_euler('xyz', pose_est[3:])
         est_euler[iter] = est_rotation_obj.as_euler('xyz', degrees=True)
 
         gt_matrix = gt_states[iter].reshape(4,4)
