@@ -18,6 +18,11 @@ from nerfstudio.utils.eval_utils import eval_setup
 from pathlib import Path
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
+import pathlib
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
+
+
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
     # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
     fov = 50
@@ -136,10 +141,12 @@ class DroneAgent(BaseAgent):
         ####################### solve LQR #######################
         n = A.shape[0]
         m = B.shape[1]
+
         Q = np.eye(n)
-        Q[0, 0] = 10.
-        Q[1, 1] = 10.
-        Q[2, 2] = 10.
+        Q[0, 0] = 100.
+        Q[4, 4] = 100.
+        Q[8, 8] = 100.
+        
         # Q[11,11] = 0.01
         R = np.diag([1., 1., 1.])
         self.K, _, _ = lqr(A, B, Q, R)
@@ -267,8 +274,9 @@ if __name__ == "__main__":
     #Render 2d Images
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
-    # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-    config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
+    # config_fn = os.path.join('./nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
+    config_fn = './outputs2/IRL2/nerfacto/2023-09-21_210511/config.yml'
+    # config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
     # config_fn = os.path.join(self.path)
     config_path = Path(config_fn)
     _, pipeline, _, step = eval_setup(

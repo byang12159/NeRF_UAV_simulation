@@ -47,19 +47,8 @@ class Run():
         initial_rotation_obj = R.from_matrix(initial_rotation[:3,:3])
         initial_rotation_eul = initial_rotation_obj.as_euler('xyz')
         self.initialization_center = [self.cam_states[0][3],self.cam_states[0][7],self.cam_states[0][11],initial_rotation_eul[0],initial_rotation_eul[1],initial_rotation_eul[2]]
-        # bounds for particle initialization, meters + degrees
-        # Isseus pitch and roll
-        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-1.5,'ry':-1.5,'rx':-1.5}
-        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':1.5,'ry':1.5,'rx':1.5}
-
-        # Y 14, P13, R25
-        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.5,'ry':-0.5,'rx':-0.5}
-        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.5,'ry':0.5,'rx':0.5}
-
-        # Good              
-        # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.2,'ry':-0.2,'rx':-0.2}
-        # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.2,'ry':0.2,'rx':0.2}
-
+        
+        # bounds for particle initialization, meters + radians
         self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.01,'ry':-0.01,'rx':-0.01}
         self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.01,'ry': 0.01,'rx': 0.01}
 
@@ -83,6 +72,8 @@ class Run():
         self.num_updates =0
         self.control = Controller()
         
+        # self.fog_param = set_fog
+        # self.dark_param = set_dark
 
         self.view_debug_image_iteration = 0 #view NeRF rendered image at estimated pose after number of iterations (set to 0 to disable)
 
@@ -163,24 +154,6 @@ class Run():
             # theta = gt_euler[1]
             # psi = gt_euler[2]
 
-
-
-            # # For Testing: Initialize at camera location
-            # i = self.cam_states[0]
-            # x = i[3]+particle[0]
-            # y = i[7]+particle[1]
-            # z = i[11]+particle[2]
-            # rot1 = i.reshape(4,4)
-            # rot = rot1[:3,:3]
-            # gt_rotation  = R.from_matrix(rot)
-            # gt_euler  =  gt_rotation.as_euler('xyz')
-            # phi = gt_euler[0]+ np.pi/4
-            # theta = gt_euler[1]
-            # psi = gt_euler[2]
-            # if index < 10:
-            #     print("ROTS1",phi,theta,psi)
-            # gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
-
             # For random particles within given bound
             x = self.initialization_center[0] + particle[0]
             y = self.initialization_center[1] + particle[1]
@@ -189,15 +162,6 @@ class Run():
             theta = self.initialization_center[4]+ particle[4]
             psi   = self.initialization_center[5]+ particle[5]
             gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
-
-            # # For random particles within given bound
-            # x = particle[0]+self.initialization_center[0]
-            # y = particle[1]+self.initialization_center[1]
-            # z = particle[2]+self.initialization_center[2]
-            # phi = particle[3]
-            # theta = particle[4]
-            # psi = particle[5]
-            # gt_rotation_obj = R.from_euler('xyz',[phi,theta,psi])
 
             # set positions
             initial_positions[index,:] = [x,y,z]
@@ -373,7 +337,7 @@ class Run():
 
         return pose_est
 
-    def step(self, state, flag = False):
+    def step(self, state, fog_param, dark_param, flag = False):
         cam2world = np.zeros((3,4))
         cam2world[:,3] = state[:3]
         if not flag:
@@ -382,7 +346,7 @@ class Run():
             rot_mat = R.from_euler('xyz',[state[3], state[4], state[5]]).as_matrix()
         cam2world[:3,:3] = rot_mat
 
-        base_img = self.nerf.render_Nerf_image_base(cam2world,save=False, save_name = "base", iter=iter, particle_number=None)
+        base_img = self.nerf.render_Nerf_image_base(cam2world, fog_param, dark_param, save=False, save_name = "base", iter=iter, particle_number=None)
         # cv2.imshow("img ",base_img)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()

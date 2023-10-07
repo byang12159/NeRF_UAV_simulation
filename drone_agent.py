@@ -19,6 +19,13 @@ from pathlib import Path
 script_dir = os.path.dirname(os.path.realpath(__file__))
 from Run_main import Run
 
+import logging
+from datetime import datetime
+
+import pathlib
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
+
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
     # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
     fov = 50
@@ -239,6 +246,14 @@ if __name__ == "__main__":
     spline_fn = os.path.join(script_dir, './camera_path_spline.json')    
     drone_agent = DroneAgent('drone',ref_spline=spline_fn)
     
+    logging.basicConfig(
+    filename='dataset.log',  # Specify the filename
+    level=logging.DEBUG,      # Set the logging level (e.g., DEBUG, INFO, WARNING)
+    # format='%(asctime)s - %(levelname)s - %(message)s'
+    format=''
+    )
+    logging.info(f"Dataset {datetime.now()}")
+    
     cam_init = cam_states[0].reshape(4,4)
     cam_init_pos = cam_init[0:3, 3]
     cam_rpy = R.from_matrix(cam_init[0:3, 0:3]).as_euler('xyz')
@@ -257,11 +272,14 @@ if __name__ == "__main__":
     
     camera_path = './NeRF_UAV_simulation/camera_path.json'
     config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
+    param_fog = 0.1
+    param_dark = 0.2
     mcl = Run(camera_path,config_fn, 80, 80, 50)      
     est = []
     for i in range(200):
         gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
-        est_state = mcl.step(gt_state)
+
+        est_state = mcl.step(gt_state, param_fog, param_dark)
         est.append(est_state)
         est_state[5] = est_state[5]%(2*np.pi)
         if est_state[5] > np.pi/2:
@@ -288,6 +306,17 @@ if __name__ == "__main__":
         ltime = i*0.1
         lstate = np.insert(lstate, 0, ltime).reshape((1,-1))
         traj = np.vstack((traj,lstate))
+
+        logging.info( (gt_state.tolist() ,est_state.tolist() ,[param_fog, param_dark]) )
+
+        if i == 1:
+            environment_fog_noise = np.random.normal(0.0, 0.01)
+            environment_dark_noise = np.random.normal(0.0, 0.01)
+            param_fog += environment_fog_noise
+            param_dark += environment_dark_noise
+
+
+
 
     #Render 2d Images
     script_dir = os.path.dirname(os.path.realpath(__file__))

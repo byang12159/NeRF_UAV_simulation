@@ -32,6 +32,8 @@ from nerfstudio.utils import colormaps
 from torchvision.utils import save_image
 import matplotlib.image
 
+import imgaug.augmenters as iaa
+
 # part of this script is adapted from iNeRF https://github.com/salykovaa/inerf
 # and NeRF-Pytorch https://github.com/yenchenlin/nerf-pytorch/blob/master/load_llff.py
 
@@ -147,7 +149,7 @@ class NeRF:
 
         return img
     
-    def render_Nerf_image_base(self, cam_state, save, save_name, iter, particle_number):
+    def render_Nerf_image_base(self, cam_state, fog_setting, dark_setting, save, save_name, iter, particle_number):
         rpy = R.from_matrix(cam_state[:3,:3])
         self.base_rotations.append(rpy)
         
@@ -163,11 +165,14 @@ class NeRF:
         img = tmp['rgb']
         img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
 
+        img2 = self.set_fog_properties(img, fog_setting)
+        img3 = self.set_dark_properties(img2, dark_setting)
+
         if save:
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
-            cv2.imwrite(output_dir, img)
+            cv2.imwrite(output_dir, img3)
 
-        return img
+        return img3
 
 
     def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
@@ -248,4 +253,16 @@ class NeRF:
         plt.imshow(rgb8)
         plt.show()
 
-    
+    def set_fog_properties(self, img, val):
+        aug = iaa.Fog(
+            intensity_mean = (255, 255),
+            density_multiplier = (val, val)
+        )
+        image_fog = aug(image = img)
+        return image_fog
+
+    def set_dark_properties(self, img, val):
+        aug = iaa.Add(val*100)
+        image_dark = aug(image=img)
+        return image_dark
+        

@@ -25,10 +25,12 @@ def set_dark_properties(img, val):
 # Value between 0 and 1
 image_fog = set_fog_properties(image, 0.5)
 plt.figure(1)
+plt.title("Fog parameter")
 plt.imshow(image_fog)
 
 # Value between -1 and 1
-image_dark = set_dark_properties(image, 0)
+image_dark = set_dark_properties(image, 1)
 plt.figure(2)
 plt.imshow(image_dark)
+plt.title("Dark parameter")
 plt.show()
