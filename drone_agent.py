@@ -272,8 +272,8 @@ if __name__ == "__main__":
     
     camera_path = './NeRF_UAV_simulation/camera_path.json'
     config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
-    param_fog = 0.1
-    param_dark = 0.2
+    param_fog = 0.8
+    param_dark = 1.0
     mcl = Run(camera_path,config_fn, 80, 80, 50)      
     est = []
     for i in range(200):
@@ -312,9 +312,16 @@ if __name__ == "__main__":
         if i == 1:
             environment_fog_noise = np.random.normal(0.0, 0.01)
             environment_dark_noise = np.random.normal(0.0, 0.01)
+
             param_fog += environment_fog_noise
             param_dark += environment_dark_noise
 
+            #Saturate fog value [0,1], dark value [-1,1]
+            param_fog = max(min(param_fog, 1), 0)
+            if param_dark > 0:
+                param_dark = min(param_dark, 1)
+            else:
+                param_dark = max(param_dark, -1)
 
 
 
