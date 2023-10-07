@@ -73,17 +73,19 @@ class ParticleFilter:
     
         #resample
 
-        out = 20 # Number of outlier particles chosen
+        out = int(0.5*self.num_particles) # Number of outlier particles chosen
         # choice = np.random.choice(self.num_particles, self.num_particles-out, p = self.weights, replace=True)
-        choice = np.random.choice(self.num_particles, self.num_particles, p = self.weights, replace=True)
+        choice = np.random.choice(self.num_particles, self.num_particles-out, p = self.weights, replace=True)
         temp = {'position':np.copy(self.particles['position'])[choice, :], 'rotation':np.copy(self.particles['rotation'])[choice]}
 
+        pos_est = self.compute_simple_position_average()
+        rot_est = self.compute_simple_rotation_average()
         # Add some particles spread 
-        # for i in range(out):
-        #     resample_particle_noise_translation = np.random.normal(0.0, 0.05,3)
-        #     resample_particle_noise_rotation = np.random.normal(0.0, 0.05,3)
-        #     temp['position'][i] += resample_particle_noise_translation
-
+        for i in range(out):
+            resample_particle_noise_translation = np.random.uniform(-0.05, 0.05,3)
+            resample_particle_noise_rotation = np.random.normal(-0.05, 0.05,3)
+            temp['position'] = np.concatenate((temp['position'],(pos_est + resample_particle_noise_translation).reshape((1,-1))),axis=0)
+            temp['rotation'] = np.append(temp['rotation'],R.from_euler('xyz', R.from_quat(rot_est).as_euler('xyz')+resample_particle_noise_rotation))
 
         self.particles = temp
 

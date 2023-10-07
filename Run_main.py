@@ -35,8 +35,8 @@ class Run():
         self.nerfFov = (data.get('keyframes')[0].get('fov')) #Assuming all cameras rendered using same FOV 
 
         print("Finish importing camera states")
-        self.nerfW = 320
-        self.nerfH = 320
+        self.nerfW = width
+        self.nerfH = height
         ####################### Initialize Variables #######################
 
         initial_rotation = self.cam_states[0].reshape(4,4)
@@ -318,8 +318,6 @@ class Run():
         total_nerf_time += nerf_time
 
         # Resample Weights
-        self.filter.update()
-        self.num_updates += 1
         
         position_est = self.filter.compute_simple_position_average()
         quat_est = self.filter.compute_simple_rotation_average()
@@ -328,6 +326,8 @@ class Run():
         pose_est[3:] = quat_est 
         self.all_pose_est.append(pose_est)
 
+        self.filter.update()
+        self.num_updates += 1
 
         # # Create a 3D plot
         # fig = plt.figure()
@@ -371,8 +371,8 @@ class Run():
 
 if __name__ == "__main__":
 
-    camera_path = 'camera_path.json'
-    nerf_file_path = './outputs/IRL1/nerfacto/2023-09-15_031235/config.yml'
+    camera_path = './NeRF_UAV_simulation/camera_path.json'
+    nerf_file_path = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
 
     mcl = Run(camera_path,nerf_file_path, 80, 80, 50)      
 
@@ -450,3 +450,10 @@ if __name__ == "__main__":
         print(f'pose est iteration {iter}:\n',pose_est)
 
     print("########################Done########################")
+    fig = plt.figure(0)
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(gt_states[:iter+1,3], gt_states[:iter+1,7], gt_states[:iter+1,11], 'g')
+    ax.scatter(gt_states[:iter+1,3], gt_states[:iter+1,7], gt_states[:iter+1,11], 'm')
+    ax.plot(est_states[:iter+1,0], est_states[:iter+1,1], est_states[:iter+1,2], 'r')
+    ax.scatter(est_states[:iter+1,0], est_states[:iter+1,1], est_states[:iter+1,2], 'm')
+    plt.show()

@@ -179,6 +179,7 @@ class NeRF:
             cv2.imwrite(output_dir, img)
 
         return img
+
     def get_loss(self, particle_poses, batch, base_img, iter):
         target_s = self.obs_img_noised[batch[:, 1], batch[:, 0]] # TODO check ordering here
         target_s = torch.Tensor(target_s).to(device)
@@ -186,6 +187,8 @@ class NeRF:
 
         start_time = time.time()
 
+        output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/base.png"
+        cv2.imwrite(output_dir, base_img*255)
         for i, particle in enumerate(particle_poses):
             print(i)
         
@@ -198,6 +201,11 @@ class NeRF:
 
             # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
             loss = img2mse(base_tensor,compare_tensor)
+            tmp = compare_img*255 
+            cv2.putText(tmp, f'Loss: {loss.item()}', (int(self.nerfW/4), int(self.nerfH/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/particle_{i}.png"
+            cv2.imwrite(output_dir, tmp)
+            
             losses.append(loss.item())
 
 
@@ -205,7 +213,7 @@ class NeRF:
         nerf_time = time.time() - start_time
                    
         return losses, nerf_time
-    
+
     def visualize_nerf_image(self, nerf_pose):
         pose_dummy = torch.from_numpy(nerf_pose).cuda()
         with torch.no_grad():
