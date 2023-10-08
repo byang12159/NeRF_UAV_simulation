@@ -55,23 +55,5 @@ print(x)
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-# # Sample data
-
-# # x = [1, 2, 3, 4, 5]
-# # y = [5, 4, 3, 2, 1]
-# # z = [2, 3, 1, 5, 4]
-
-# # Create a 3D scatter plot
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-
-# ax.scatter(x, y, z, c='b', marker='o')  # Scatter points
-
-# ax.set_xlabel('X Label')
-# ax.set_ylabel('Y Label')
-# ax.set_zlabel('Z Label')
-
-# plt.show()
-
-odometry_particle_noise_translation = np.random.normal(0.0, 0.005,3)
-print(odometry_particle_noise_translation)
+gt_noise = np.random.normal(0.0, 0.001,12)
+print(gt_noise)

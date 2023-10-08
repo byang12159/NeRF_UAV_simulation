@@ -17,6 +17,10 @@ import torch
 import pickle 
 import copy 
 
+import pathlib
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
+
 class Run():
     def __init__(self, camera_path, nerf_file_path, width = 320, height = 320, fov = 50):
 
@@ -395,7 +399,7 @@ if __name__ == "__main__":
 
     
         # pose_est = mcl.rgb_run(iter, base_img)   
-        pose_est = mcl.step(state, flag = True)
+        pose_est = mcl.step(state, 0,0,flag = True)
 
         ########################## Error Visualization ##########################
         est_states[iter] = pose_est[0:3]

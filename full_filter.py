@@ -230,7 +230,7 @@ class NeRF:
             # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
             loss = img2mse(base_tensor,compare_tensor)
             tmp = compare_img*255 
-            cv2.putText(tmp, f'Loss: {loss.item()}', (int(self.nerfW/4), int(self.nerfH/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            # cv2.putText(tmp, f'Loss: {loss.item()}', (int(self.nerfW/4), int(self.nerfH/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/particle_{i}.png"
             cv2.imwrite(output_dir, tmp)
             
