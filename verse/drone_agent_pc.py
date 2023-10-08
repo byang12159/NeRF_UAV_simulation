@@ -94,14 +94,22 @@ B[3, 0] = n0
 B[7, 1] = n0
 B[9, 2] = kT
 
-class DroneAgent(BaseAgent):
-    def __init__(self, id, code=None, file_name = None, ref_spline = 'camera_path_spline.json'):
+def apply_contract(point, M):
+    estimate_low = point + np.random.uniform(
+        -np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0]),
+        np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0])
+    )
+    return estimate_low
+
+class DroneAgentPC(BaseAgent):
+    def __init__(self, id, M, code=None, file_name = None, ref_spline = 'camera_path_spline.json'):
         self.id = id
         self.init_cont = None
         self.init_disc = None
         self.static_parameters = None 
         self.uncertain_parameters = None
         self.decision_logic = ControllerIR.empty()
+        self.M = M
 
         # with open(ref_spline, 'r') as f:
         #     data = json.load(f)
@@ -213,14 +221,14 @@ class DroneAgent(BaseAgent):
         trajectory = np.reshape(trajectory, (1, -1))
         for i in range(1, len(time_steps)):
             x_ground_truth = state[:12]
-            x_estimate = state[12:24]
-            ref_state = state[24:]
+            x_estimate = apply_contract(x_ground_truth, self.M)
+            ref_state = state[12:]
             x_next = self.step(x_estimate, x_ground_truth, time_step, ref_state)
             x_next[10] = x_next[10]%(np.pi*2)
             if x_next[10] > np.pi/2:
                 x_next[10] = x_next[10]-np.pi*2
             ref_next = self.run_ref(ref_state, time_step)
-            state = np.concatenate((x_next, x_estimate, ref_next))
+            state = np.concatenate((x_next, ref_next))
             tmp = np.insert(state, 0, time_steps[i])
             tmp = np.reshape(tmp, (1,-1))
             trajectory = np.vstack((trajectory, tmp))
