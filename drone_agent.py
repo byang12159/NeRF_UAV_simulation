@@ -252,8 +252,8 @@ if __name__ == "__main__":
     format=''
     )
 
-    for change_env_fog in range(0,10,1):
-        for change_env_dark in range(0,10,1):
+    for change_env_fog in range(0,11,1):
+        for change_env_dark in range(0,11,1):
             param_fog = change_env_fog/10.0
             param_dark = change_env_dark/10.0
 
@@ -272,7 +272,7 @@ if __name__ == "__main__":
                         param_dark = min(param_dark, 1)
                     else:
                         param_dark = max(param_dark, -1)
-
+                
                 logging.info(f"Dataset {datetime.now()}")
                 logging.info(f"Env Var {param_fog} fog, {param_dark} dark, Cycle#{cycle}")
 
@@ -296,9 +296,10 @@ if __name__ == "__main__":
                 config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
                 mcl = Run(camera_path,config_fn, 80, 80, 50)      
                 est = []
+  
                 for i in range(80):
                     gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
-                    est_state = mcl.step(gt_state)
+                    est_state = mcl.step(gt_state, i, param_fog, param_dark)
                     est.append(est_state)
                     est_state[5] = est_state[5]%(2*np.pi)
                     if est_state[5] > np.pi/2:
@@ -330,7 +331,7 @@ if __name__ == "__main__":
                     print("iteration i = ",i)
 
                 #Render 2d Images
-                script_dir = os.path.dirname(os.path.realpath(__file__))
+                # script_dir = os.path.dirname(os.path.realpath(__file__))
 
                 # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
                 # config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
