@@ -83,6 +83,7 @@ class ParticleFilter:
         # Add some particles spread 
         for i in range(out):
             resample_particle_noise_translation = np.random.uniform(-0.05, 0.05,3)
+
             resample_particle_noise_rotation = np.random.normal(-0.05, 0.05,3)
             temp['position'] = np.concatenate((temp['position'],(pos_est + resample_particle_noise_translation).reshape((1,-1))),axis=0)
             temp['rotation'] = np.append(temp['rotation'],R.from_euler('xyz', R.from_quat(rot_est).as_euler('xyz')+resample_particle_noise_rotation))

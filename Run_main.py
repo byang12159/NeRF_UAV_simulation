@@ -53,13 +53,17 @@ class Run():
         self.initialization_center = [self.cam_states[0][3],self.cam_states[0][7],self.cam_states[0][11],initial_rotation_eul[0],initial_rotation_eul[1],initial_rotation_eul[2]]
         
         # bounds for particle initialization, meters + radians
-        self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.01,'ry':-0.01,'rx':-0.01}
-        self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.01,'ry': 0.01,'rx': 0.01}
+        # self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.01,'ry':-0.01,'rx':-0.01}
+        # self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.01,'ry': 0.01,'rx': 0.01}
+        self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-1.0,'ry':-1.0,'rx':-1.0}
+        self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':1.0,'ry':1.0,'rx': 1.0}
+
+
 
         self.min_bounds_odometry = {'px':-0.004,'py':-0.004,'pz':-0.004,'rz':-0.001,'ry':-0.001,'rx':-0.001}
         self.max_bounds_odometry = {'px':0.004,'py':0.004,'pz':0.004,'rz':0.001,'ry': 0.001,'rx': 0.001}
 
-        self.num_particles = 400
+        self.num_particles =400
         
         self.obs_img_pose = None
         self.center_about_true_pose = False
@@ -231,7 +235,7 @@ class Run():
 
         for i in range(self.num_particles):
             odometry_particle_noise_translation = np.random.normal(0.0, 0.001,3)
-            odometry_particle_noise_rotation = np.random.normal(0.0, 0.001,3)
+            odometry_particle_noise_rotation = np.random.normal(0.0, 0.005,3)
 
             self.filter.particles['position'][i] += [state_difference[0][3]+odometry_particle_noise_translation[0], state_difference[1][3]+odometry_particle_noise_translation[0], state_difference[2][3]+odometry_particle_noise_translation[0]]
 
@@ -246,11 +250,9 @@ class Run():
             prot = R.from_euler('xyz',peul)
             self.filter.particles['rotation'][i] = prot
         
-        print("Finish odometry update")
 
     def rgb_run(self,iter, img, current_state, msg=None, get_rays_fn=None, render_full_image=False):
         self.odometry_update(self.last_state,current_state)
-        print("processing image")
         start_time = time.time()
 
         # make copies to prevent mutations
@@ -283,11 +285,10 @@ class Run():
             loss_poses.append(loss_pose)
 
         losses, nerf_time = self.nerf.get_loss(loss_poses, batch, img, iter=iter)
-        print("Pass losses")
         # print("Loss Values" ,losses)
-        temp = 0
+
         for index, particle in enumerate(particles_position_before_update):
-            self.filter.weights[index] = 1/(losses[index]+temp)
+            self.filter.weights[index] = 1/(losses[index])
 
         total_nerf_time += nerf_time
 
@@ -354,6 +355,7 @@ class Run():
         # cv2.imshow("img ",base_img)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
+        # print("BASE VALUE",np.max(base_img), np.min(base_img))
 
         tmp = np.vstack((cam2world, np.array([[0,0,0,1]])))
         if self.last_state is None:

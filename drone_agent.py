@@ -254,7 +254,7 @@ if __name__ == "__main__":
     )
 
     for change_env_fog in range(0,10,1):
-        for change_env_dark in range(-10,10,1):
+        for change_env_dark in range(-1,0,1):
             param_fog = change_env_fog/10.0
             param_dark = change_env_dark/10.0
 
@@ -289,7 +289,7 @@ if __name__ == "__main__":
                     cam_init_pos[2], 0, cam_rpy[2]+np.pi/2, 0, 
                 ])
 
-                ref_init = np.array([0,1])
+                ref_init = np.array([0,4])
 
                 state = drone_init 
                 ref = ref_init 
@@ -300,7 +300,7 @@ if __name__ == "__main__":
                 
                 mcl = Run(camera_path,config_fn, 80, 80, 50)      
                 est = []
-                for i in range(320):
+                for i in range(80):
                     gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
 
                     est_state = mcl.step(gt_state, param_fog, param_dark)
@@ -388,6 +388,8 @@ if __name__ == "__main__":
                 file_path = f'./NeRF_UAV_simulation/Plots/plot_F{param_fog}_D{param_dark}_C{cycle}.png'
                 plt.savefig(file_path)
                 plt.close()
+
+                break
 
     #Render 2d Images
     # script_dir = os.path.dirname(os.path.realpath(__file__))

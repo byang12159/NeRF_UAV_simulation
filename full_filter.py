@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 from nerfstudio.utils import colormaps
 from torchvision.utils import save_image
 import matplotlib.image
-
+from skimage.metrics import structural_similarity as compare_ssim
 import imgaug.augmenters as iaa
 
 # part of this script is adapted from iNeRF https://github.com/salykovaa/inerf
@@ -164,7 +164,7 @@ class NeRF:
 
         img = tmp['rgb']
         img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
-
+        print("IMAGE 1",np.max(img),np.min(img))
         img2 = self.set_fog_properties(img, fog_setting)
         img3 = self.set_dark_properties(img2, dark_setting)
 
@@ -172,7 +172,7 @@ class NeRF:
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
             cv2.imwrite(output_dir, img3)
 
-        return img3
+        return img
 
 
     def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
@@ -217,25 +217,37 @@ class NeRF:
 
         output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/base.png"
         cv2.imwrite(output_dir, base_img*255)
+        max = 0 
+        min = 10000
         for i, particle in enumerate(particle_poses):
-            print(i)
         
             compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
-            compare_img_points = compare_img[batch[:,0],batch[:,1]]
-            compare_tensor = torch.tensor(compare_img_points)
+        
+            # # base_img = base_img*255
+            # compare_img = compare_img*255
+            # base_img = base_img.astype(int)
+            # compare_img = compare_img.astype(int)
 
-            base_img_points = base_img[batch[:,0],batch[:,1]]
-            base_tensor = torch.tensor(base_img_points)
+            graycomp = cv2.cvtColor(compare_img, cv2.COLOR_BGR2GRAY)
+            graybase = cv2.cvtColor(base_img, cv2.COLOR_BGR2GRAY)
 
-            # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
-            loss = img2mse(base_tensor,compare_tensor)
-            tmp = compare_img*255 
-            # cv2.putText(tmp, f'Loss: {loss.item()}', (int(self.nerfW/4), int(self.nerfH/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-            output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/particle_{i}.png"
-            cv2.imwrite(output_dir, tmp)
+            (score, diff) = compare_ssim(graybase, graycomp, data_range=1.0, full=True)
+
+            # compare_img_points = compare_img[batch[:,0],batch[:,1]]
+            # compare_tensor = torch.tensor(compare_img_points)
+
+            # base_img_points = base_img[batch[:,0],batch[:,1]]
+            # base_tensor = torch.tensor(base_img_points)
+
+            # # print("SIZE COMPARE",base_tensor.shape, compare_tensor.shape)
+            # loss = img2mse(base_tensor,compare_tensor)
+            # tmp = compare_img*255 
+            # # cv2.putText(tmp, f'Loss: {loss.item()}', (int(self.nerfW/4), int(self.nerfH/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            # output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/particle_{i}.png"
+            # cv2.imwrite(output_dir, tmp)
             
-            losses.append(loss.item())
-
+            losses.append(score+1)
+  
 
       
         nerf_time = time.time() - start_time
