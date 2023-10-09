@@ -18,6 +18,8 @@ import scipy.spatial
 from datetime import datetime 
 from verse.analysis.verifier import ReachabilityMethod
 
+from get_all_models import get_all_models
+
 import pickle 
 import json 
 import ray
@@ -242,8 +244,8 @@ def compute_and_check(X_0, M, R, depth=0):
     num_sample_x = 5
     num_sample_y = 1
     computation_steps = 0.1
-    C_compute_step = 10
-    C_num = 30
+    C_compute_step = 30
+    C_num = 5
     parallel = True
     time_steps = 0.01
     
@@ -277,7 +279,7 @@ def compute_and_check(X_0, M, R, depth=0):
             C_compute_step*computation_steps, 
             computation_steps, 
             params={
-                # 'bloating_method':'GLOBAL',
+                'bloating_method':'GLOBAL',
                 # 'traces':trajectories
             }
         )
@@ -452,9 +454,12 @@ if __name__ == "__main__":
     C_compute_step = 20
     computation_steps = 0.1 
     time_steps = 0.01
-    # generate_trajectories(
-    #     drone_agent, None, X_0, ref, num_sample_x, 
-    #     num_sample_y, C_compute_step, computation_steps, time_steps
-    # )
-    res, C_list = compute_and_check(X_0, None, None,0)
+
+    fn = os.path.join(script_dir, './exp2_train1.pickle')
+    with open(fn, 'rb') as f:
+        data = pickle.load(f)
+    
+    M = get_all_models(data)
+
+    res, C_list = compute_and_check(X_0, M, None,0)
     print(C_list)
