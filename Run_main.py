@@ -60,13 +60,13 @@ class Run():
         # self.min_bounds = {'px':-1.0,'py':-1.0,'pz':-1.0,'rz':-0.2,'ry':-0.2,'rx':-0.2}
         # self.max_bounds = {'px':1.0,'py':1.0,'pz':1.0,'rz':0.2,'ry':0.2,'rx':0.2}
 
-        self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.01,'ry':-0.01,'rx':-0.01}
-        self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.01,'ry': 0.01,'rx': 0.01}
+        self.min_bounds = {'px':-0.01,'py':-0.01,'pz':-0.01,'rz':-0.0,'ry':-0.0,'rx':-0.0}
+        self.max_bounds = {'px':0.01,'py':0.01,'pz':0.01,'rz':0.0,'ry': 0.0,'rx': 0.0}
 
         self.min_bounds_odometry = {'px':-0.004,'py':-0.004,'pz':-0.004,'rz':-0.001,'ry':-0.001,'rx':-0.001}
         self.max_bounds_odometry = {'px':0.004,'py':0.004,'pz':0.004,'rz':0.001,'ry': 0.001,'rx': 0.001}
 
-        self.num_particles = 400
+        self.num_particles = 100
         
         self.obs_img_pose = None
         self.center_about_true_pose = False

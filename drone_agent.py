@@ -259,7 +259,7 @@ if __name__ == "__main__":
     config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
     mcl = Run(camera_path,config_fn, 80, 80, 50)      
     est = []
-    for i in range(200):
+    for i in range(310):
         gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
         est_state = mcl.step(gt_state)
         est.append(est_state)
@@ -367,7 +367,21 @@ if __name__ == "__main__":
     ax.set_zlabel('z')
 
     plt.figure(2)
-    plt.plot(yaw_ref, label='ref')
-    plt.plot(yaw_act, label='act')
+    plt.plot(traj[1:,15], label='est')
+    plt.plot(traj[:-1,3], label='act')
+    plt.title('roll')
     plt.legend()
+
+    plt.figure(3)
+    plt.plot(traj[1:,19], label='est')
+    plt.plot(traj[:-1,7], label='act')
+    plt.title('pitch')
+    plt.legend()
+
+    plt.figure(4)
+    plt.plot(traj[1:,23], label='est')
+    plt.plot(traj[:-1,11], label='act')
+    plt.title('yaw')
+    plt.legend()
+
     plt.show()

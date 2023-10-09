@@ -17,6 +17,8 @@ import cv2
 from nerfstudio.utils.eval_utils import eval_setup
 from pathlib import Path
 from camera_path_spline import spline 
+from typing import Tuple 
+
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
@@ -94,12 +96,34 @@ B[3, 0] = n0
 B[7, 1] = n0
 B[9, 2] = kT
 
-def apply_contract(point, M):
-    estimate_low = point + np.random.uniform(
-        -np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0]),
-        np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0])
-    )
-    return estimate_low
+def apply_model(model, point):
+    cc = model['coef_center']
+    cr = model['coef_radius']
+
+    x = point[0]
+    y = point[1]
+    z = point[2]
+    c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
+    r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+    return c, abs(r)
+
+def get_vision_estimation(point: np.ndarray, models) -> Tuple[np.ndarray, np.ndarray]:
+    x_c, x_r = apply_model(models[0], point)
+    y_c, y_r = apply_model(models[1], point)
+    z_c, z_r = apply_model(models[2], point)
+    
+    low = np.array([
+        point[0]-0.01, point[1], point[2], point[3], 
+        point[4]-0.01, point[5], point[6], point[7], 
+        point[8]-0.01, point[9], point[10], point[11]
+    ])
+    high = np.array([    
+        point[0]+0.01, point[1], point[2], point[3], 
+        point[4]+0.01, point[5], point[6], point[7], 
+        point[8]+0.01, point[9], point[10], point[11]
+    ])
+
+    return low, high
 
 class DroneAgentPC(BaseAgent):
     def __init__(self, id, M, code=None, file_name = None, ref_spline = 'camera_path_spline.json'):
@@ -221,7 +245,8 @@ class DroneAgentPC(BaseAgent):
         trajectory = np.reshape(trajectory, (1, -1))
         for i in range(1, len(time_steps)):
             x_ground_truth = state[:12]
-            x_estimate = apply_contract(x_ground_truth, self.M)
+            x_estimate_low, x_estimate_high = get_vision_estimation(x_ground_truth, self.M)
+            x_estimate = np.random.uniform(x_estimate_low, x_estimate_high)
             ref_state = state[12:]
             x_next = self.step(x_estimate, x_ground_truth, time_step, ref_state)
             x_next[10] = x_next[10]%(np.pi*2)

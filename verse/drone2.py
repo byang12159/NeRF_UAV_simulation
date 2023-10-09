@@ -244,8 +244,8 @@ def compute_and_check(X_0, M, R, depth=0):
     num_sample_x = 5
     num_sample_y = 1
     computation_steps = 0.1
-    C_compute_step = 30
-    C_num = 5
+    C_compute_step = 300
+    C_num = 1
     parallel = True
     time_steps = 0.01
     
