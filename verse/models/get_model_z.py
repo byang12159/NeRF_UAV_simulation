@@ -12,6 +12,8 @@ def compute_model_z(state_array, trace_array, E_array, pc=0.9, pr=0.95):
     Y = trace_array[:,2]
     model_radius = sm.QuantReg(Y, sm.add_constant(X))
     result = model_radius.fit(q = 0.5)
+    # model_radius = sm.OLS(Y, sm.add_constant(X))  
+    # result = model_radius.fit()
     cc = result.params 
 
     # Getting Model for Radius

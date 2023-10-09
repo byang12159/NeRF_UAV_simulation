@@ -27,8 +27,79 @@ import plotly.graph_objects as go
 import pyvista as pv 
 
 from scipy.spatial.transform import Rotation as R
+import open3d as o3d
 
 script_dir = os.path.realpath(os.path.dirname(__file__))
+
+# def apply_model_batch(model, point):
+#     cc = model['coef_center']
+#     cr = model['coef_radius']
+
+#     x = point[0]
+#     y = point[4]
+#     z = point[8]
+#     c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
+#     r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+#     return c, abs(r)
+
+def apply_model(model, point):
+    cc = model['coef_center']
+    cr = model['coef_radius']
+
+    x = (point.T)[0]
+    y = (point.T)[1]
+    z = (point.T)[2]
+    c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
+    r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+    return c, abs(r)
+
+def create_box(box):
+                
+    translation = box[3:6]
+    h, w, l = box[0], box[1], box[2]
+
+    rotationz = box[6]
+    rotationy = box[7]
+    rotationx = box[8]
+
+    # Create a bounding box outline if x,y,z is center point
+    bounding_box = np.array([
+        [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
+        [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
+        [-h/2, -h/2, -h/2, -h/2, h/2, h/2, h/2, h/2]])
+    
+    # Create a bounding box outline if x,y,z is rear center point
+    # bounding_box = np.array([
+    #             [l,l,0,0,l,l,0,0],                      
+    #             [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2],          
+    #             [0,0,0,0,h,h,h,h]])                        
+
+    rotation_matrixZ = np.array([
+        [np.cos(rotationz), -np.sin(rotationz), 0.0],
+        [np.sin(rotationz), np.cos(rotationz), 0.0],
+        [0.0, 0.0, 1.0]])
+    
+    rotation_matrixY = np.array([
+        [np.cos(rotationy), 0.0, np.sin(rotationy)],
+        [0.0, 1.0 , 0.0],
+        [-np.sin(rotationy), 0.0,  np.cos(rotationy)]])
+
+    rotation_matrixX = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, np.cos(rotationx), -np.sin(rotationx)],
+        [0.0, np.sin(rotationx),  np.cos(rotationx)]])
+    
+    
+    rotation_matrix = rotation_matrixZ@rotation_matrixY@rotation_matrixX
+    print(rotation_matrix)
+    # Repeat the center position [x, y, z] eight times
+    eight_points = np.tile(translation, (8, 1))
+
+    # Translate the rotated bounding box by the
+    # original center position to obtain the final box
+    corner_box = rotation_matrix@bounding_box + eight_points.transpose()
+    return corner_box.transpose()
+
 
 class DroneMode(Enum):
     Normal = auto() 
@@ -126,13 +197,6 @@ def get_next_poly(trace_list) -> scipy.spatial.ConvexHull:
     vertices = np.array(vertices)
     hull = scipy.spatial.ConvexHull(vertices, qhull_options='Qx Qt QbB Q12 Qc')    
     return hull, sample_vertex
-
-def get_vision_estimation(point, M):
-    estimate_low = point - np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0])
-    estimate_high = point + np.array([0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01, 0])
-    estimate_low = point 
-    estimate_high = point
-    return estimate_low, estimate_high
 
 def verify_step(point, M, computation_steps, time_steps, ref):
     # print(C_step, step, i, point)
@@ -232,7 +296,7 @@ def generate_trajectories(drone_agent, M, X_0, ref, num_sample_x, num_sample_y, 
     # Return all results
     return all_traces, init_set
 
-def compute_and_check(X_0, M, R, depth=0):
+def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_step = 10, C_num = 30):
     # x, y, z, yaw, pitch, v
     # state = np.array([
     #     [-3050.0, -20, 110.0, 0-0.01, -np.deg2rad(3)-0.01, 10-0.1], 
@@ -244,18 +308,19 @@ def compute_and_check(X_0, M, R, depth=0):
     num_sample_x = 5
     num_sample_y = 1
     computation_steps = 0.1
-    C_compute_step = 30
-    C_num = 10
+    C_compute_step = 10
+    C_num = 30
     parallel = True
     time_steps = 0.01
     
     ref = np.array([0, 1])
 
     C_list = [np.hstack((np.array([[0],[0]]),state))]
+    reachtube = None
     # point_idx_list_list = []
     # point_list_list = []
 
-    fig = pv.Plotter()
+    # fig = pv.Plotter()
     for C_step in range(C_num):
         # try:
         # Generate simulation trajectories
@@ -280,16 +345,21 @@ def compute_and_check(X_0, M, R, depth=0):
             computation_steps, 
             params={
                 'bloating_method':'GLOBAL',
+                'sim_trace_num': 100
                 # 'traces':trajectories
             }
         )
         # fig = plot3dMap(tmp_map, ax=fig, width=0.05)
-        fig = plot3dReachtube(res, "a1", 1, 5, 9, "r", fig, edge=True)
+        # fig = plot3dReachtube(res, "a1", 1, 5, 9, "r", fig, edge=True)
         # fig = plot3dReachtube(traces, "test2", 1, 2, 3, "b", fig, edge=True)
         # fig.set_background("#e0e0e0")
    
         # Check containment
         reachable_set = np.array(res.root.trace['a1'])
+        if reachtube is None: 
+            reachtube = reachable_set
+        else:
+            reachtube = np.vstack((reachtube, reachable_set))
         next_init = reachable_set[-2:, 1:]
         C_set = np.hstack((np.array([[C_step+1],[C_step+1]]), next_init))
         res = check_containment(C_set, R, C_step+1)
@@ -300,19 +370,19 @@ def compute_and_check(X_0, M, R, depth=0):
         state = next_init[:,:12] 
         ref = run_ref(ref, C_compute_step*computation_steps)
 
-    fig.show()
-    return 'safe', C_list
+    # fig.show()
+    return 'safe', C_list, reachtube
                 
 
 def visualize_outlier(num_outlier_list, E, idx = 0):
-    full_e = np.ones((20, 14))*(-1)
+    full_e = np.ones((10, 10))*(-1)
     for i in range(len(E)):
         E_part = E[i]
-        idx1 = round((E_part[0,0]-0.2)/0.05)
-        idx2 = round((E_part[0,1]-(-0.1))/0.05)
+        idx1 = round((E_part[0,0]-0)/0.1)
+        idx2 = round((E_part[0,1]-0)/0.1)
         full_e[idx1, idx2] = num_outlier_list[i]
     full_e = full_e/np.max(full_e)
-    rgba_image = np.zeros((20, 14, 4))  # 4 channels: R, G, B, A
+    rgba_image = np.zeros((10, 10, 4))  # 4 channels: R, G, B, A
     rgba_image[..., :3] = plt.cm.viridis(full_e)[..., :3]  # Apply a colormap    
     mask = np.where(full_e<0)
     rgba_image[..., 3] = 1.0  # Set alpha to 1 (non-transparent)
@@ -379,10 +449,10 @@ def remove_data(data, E):
     state_array, trace_array, E_array = data 
     idx = np.array([])
     for E_range in E:
-        tmp = np.where((E_array[:,0]>E_range[0,0]) &\
-                       (E_array[:,0]<E_range[1,0]) &\
-                       (E_array[:,1]>E_range[0,1]) &\
-                       (E_array[:,1]<E_range[1,1])
+        tmp = np.where((E_array[:,0]>=E_range[0,0]) &\
+                       (E_array[:,0]<=E_range[1,0]) &\
+                       (E_array[:,1]>=E_range[0,1]) &\
+                       (E_array[:,1]<=E_range[1,1])
                        )[0]
         idx = np.concatenate((idx,tmp))
     idx = np.unique(idx).astype('int')
@@ -419,6 +489,21 @@ def findM(X_0, E_0, R, data):
     print("safe")
     return M, E, None, C_list
 
+def partitionE(E):
+    partition_list = []
+    E1 = np.arange(E[0,0], E[1,0]+0.01, 0.1)
+    E2 = np.arange(E[0,1], E[1,1]+0.01, 0.1)
+
+    for i in range(len(E1)-1):
+        for j in range(len(E2)-1):
+            partition = np.array([
+                [E1[i], E2[j]],
+                [E1[i+1], E2[j+1]]
+            ])
+            partition_list.append(partition)
+
+    return partition_list
+
 if __name__ == "__main__":
     fn = os.path.join(script_dir, '../camera_path.json')
     with open(fn, 'r') as f:
@@ -451,15 +536,72 @@ if __name__ == "__main__":
     ref = np.array([0,1])
     num_sample_x = 5
     num_sample_y = 1
-    C_compute_step = 20
-    computation_steps = 0.1 
+    computation_steps = 0.1
+    C_compute_step = 300
+    C_num = 1
     time_steps = 0.01
+
+    E = np.array([
+        [0, 0],
+        [1.0, 1.0]
+    ])
+
+    E = partitionE(E)
 
     fn = os.path.join(script_dir, './exp2_train1.pickle')
     with open(fn, 'rb') as f:
         data = pickle.load(f)
     
-    M = get_all_models(data)
+    for i in range(5):
+        E = refineEnv(E, None, data, i)
 
-    res, C_list = compute_and_check(X_0, M, None,0)
-    print(C_list)
+    M = computeContract(data, E)
+
+    res, C_list, reachtube = compute_and_check(X_0, M, None,0, computation_steps, C_compute_step, C_num)
+    # print(C_list)
+    with open(os.path.join(script_dir, 'exp2_safe.pickle'), 'wb+') as f: 
+        pickle.dump((M, E, C_list, reachtube), f)
+
+    # Load the .ply file
+    pc_fn = os.path.join(script_dir, 'point_cloud.ply')
+    point_cloud = o3d.io.read_point_cloud(pc_fn)
+    # Create a red point at the center of the coordinate system
+    center_point = np.array([[0.0, 0.0, 0.0]]) # Center point coordinates
+    center_color = np.array([[1.0, 0.0, 0.0]]) # Red color (R,G,B)
+    point1 = np.array([[0.46990477000436776,-0.01279251651773311,0.02605140075172408]])
+    point2 = np.array([[-0.14787864315441807,-0.2924556311040014,-0.017899417569988384]])
+    # Create coordinate frame axes
+    coordinate_axes = o3d.geometry.LineSet()
+    vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    lines = np.array([[0, 1], [0, 2], [0, 3]])
+    colors = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]) # RGB colors for X, Y, Z axes
+    coordinate_axes.points = o3d.utility.Vector3dVector(vertices)
+    coordinate_axes.lines = o3d.utility.Vector2iVector(lines)
+    coordinate_axes.colors = o3d.utility.Vector3dVector(colors)
+    # Create a point cloud for the center point
+    center_cloud = o3d.geometry.PointCloud()
+    center_cloud.points = o3d.utility.Vector3dVector(center_point)
+    center_cloud.colors = o3d.utility.Vector3dVector(center_color)
+    point1_cloud = o3d.geometry.PointCloud()
+    point1_cloud.points = o3d.utility.Vector3dVector(point1)
+    point1_cloud.colors = o3d.utility.Vector3dVector(np.array([[0.0, 1.0, 0.0]]))
+    point2_cloud = o3d.geometry.PointCloud()
+    point2_cloud.points = o3d.utility.Vector3dVector(point2)
+    point2_cloud.colors = o3d.utility.Vector3dVector(np.array([[0.0, 0.0, 1.0]]))
+    # Create a visualization window
+    object_list = [point_cloud, center_cloud, point1_cloud, point2_cloud, coordinate_axes]
+    for i in range(0, reachtube.shape[0], 2):
+        lb = reachtube[i,[1,5,9]]
+        ub = reachtube[i+1,[1,5,9]]
+        h, w, l = ub-lb 
+        x,y,z = (lb+ub)/2 
+        box = [h,w,l,x,y,z,0,0,0]
+
+        boxes3d_pts = create_box(box)
+        boxes3d_pts = o3d.utility.Vector3dVector(boxes3d_pts)
+        box = o3d.geometry.OrientedBoundingBox.create_from_points(boxes3d_pts)
+        box.color = [1, 0, 0]  #Box color would be red box.color = [R,G,B]
+        
+        object_list.append(box)
+
+    o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)

@@ -48,7 +48,7 @@ def compute_model_y(state_array, trace_array, E_array, pc=0.9, pr=0.95):
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    data_file_path = os.path.join(script_dir, '../exp2_train1.pickle')
+    data_file_path = os.path.join(script_dir, '../exp1_train1.pickle')
     with open(data_file_path,'rb') as f:
         data = pickle.load(f)
 

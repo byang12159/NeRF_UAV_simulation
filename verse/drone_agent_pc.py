@@ -101,8 +101,8 @@ def apply_model(model, point):
     cr = model['coef_radius']
 
     x = point[0]
-    y = point[1]
-    z = point[2]
+    y = point[4]
+    z = point[8]
     c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
     r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
     return c, abs(r)
@@ -113,14 +113,14 @@ def get_vision_estimation(point: np.ndarray, models) -> Tuple[np.ndarray, np.nda
     z_c, z_r = apply_model(models[2], point)
     
     low = np.array([
-        point[0]-0.05, point[1], point[2], point[3], 
-        point[4]-0.05, point[5], point[6], point[7], 
-        point[8]-0.05, point[9], point[10], point[11]
+        x_c-x_r, point[1], point[2], point[3], 
+        y_c-y_r, point[5], point[6], point[7], 
+        z_c-z_r, point[9], point[10], point[11]
     ])
     high = np.array([    
-        point[0]+0.05, point[1], point[2], point[3], 
-        point[4]+0.05, point[5], point[6], point[7], 
-        point[8]+0.05, point[9], point[10], point[11]
+        x_c+x_r, point[1], point[2], point[3], 
+        y_c+y_r, point[5], point[6], point[7], 
+        z_c+z_r, point[9], point[10], point[11]
     ])
 
     return low, high
