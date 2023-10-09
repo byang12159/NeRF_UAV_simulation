@@ -253,7 +253,7 @@ if __name__ == "__main__":
     )
 
     for change_env_fog in range(0,10,1):
-        for change_env_dark in range(-1,0,1):
+        for change_env_dark in range(-10,1,1):
             param_fog = change_env_fog/10.0
             param_dark = change_env_dark/10.0
 
@@ -272,7 +272,7 @@ if __name__ == "__main__":
                         param_dark = min(param_dark, 1)
                     else:
                         param_dark = max(param_dark, -1)
-
+                
                 logging.info(f"Dataset {datetime.now()}")
                 logging.info(f"Env Var {param_fog} fog, {param_dark} dark, Cycle#{cycle}")
 
@@ -296,9 +296,10 @@ if __name__ == "__main__":
                 config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
                 mcl = Run(camera_path,config_fn, 80, 80, 50)      
                 est = []
+  
                 for i in range(80):
                     gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
-                    est_state = mcl.step(gt_state)
+                    est_state = mcl.step(gt_state, i, param_fog, param_dark)
                     est.append(est_state)
                     est_state[5] = est_state[5]%(2*np.pi)
                     if est_state[5] > np.pi/2:
@@ -330,7 +331,7 @@ if __name__ == "__main__":
                     print("iteration i = ",i)
 
                 #Render 2d Images
-                script_dir = os.path.dirname(os.path.realpath(__file__))
+                # script_dir = os.path.dirname(os.path.realpath(__file__))
 
                 # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
                 # config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
@@ -360,68 +361,68 @@ if __name__ == "__main__":
 
                 #     render_Nerf_image_simple(pipeline.model, camera_to_world, save=True, save_name = 'img_', iter = 0, particle_number = i)
 
-                fig = plt.figure(1)
-                ax = fig.add_subplot(111, projection='3d')
-                # ax.plot(x, y, z, color='b')
-                t = np.linspace(0, 32, 1000)
-                x = drone_agent.ref_traj[0](t)
-                y = drone_agent.ref_traj[1](t)
-                z = drone_agent.ref_traj[2](t)
+                # fig = plt.figure(1)
+                # ax = fig.add_subplot(111, projection='3d')
+                # # ax.plot(x, y, z, color='b')
+                # t = np.linspace(0, 32, 1000)
+                # x = drone_agent.ref_traj[0](t)
+                # y = drone_agent.ref_traj[1](t)
+                # z = drone_agent.ref_traj[2](t)
                 
-                plt.figure(1)
-                ax.plot(x,y,z, color = 'b')
-                ax.plot(traj[:,1], traj[:,5], traj[:,9], color = 'r')
-                est = np.array(est)
-                ax.plot(est[:,0], est[:,1], est[:,2], color = 'g')
-                yaw_ref = []
-                yaw_act = []
-                for i in range(len(traj)):
-                    x, y, z = traj[i, 1], traj[i, 5], traj[i, 9]
-                    yaw = traj[i, 11]
-                    offset_x = 0.1*np.cos(yaw)
-                    offset_y = 0.1*np.sin(yaw)
-                    plt.figure(1)
-                    ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'g')
-                    yaw_act.append(yaw)
+                # plt.figure(1)
+                # ax.plot(x,y,z, color = 'b')
+                # ax.plot(traj[:,1], traj[:,5], traj[:,9], color = 'r')
+                # est = np.array(est)
+                # ax.plot(est[:,0], est[:,1], est[:,2], color = 'g')
+                # yaw_ref = []
+                # yaw_act = []
+                # for i in range(len(traj)):
+                #     x, y, z = traj[i, 1], traj[i, 5], traj[i, 9]
+                #     yaw = traj[i, 11]
+                #     offset_x = 0.1*np.cos(yaw)
+                #     offset_y = 0.1*np.sin(yaw)
+                #     plt.figure(1)
+                #     ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'g')
+                #     yaw_act.append(yaw)
 
-                    t = traj[i, 25]
-                    x = drone_agent.ref_traj[0](t)
-                    y = drone_agent.ref_traj[1](t)
-                    z = drone_agent.ref_traj[2](t)
+                #     t = traj[i, 25]
+                #     x = drone_agent.ref_traj[0](t)
+                #     y = drone_agent.ref_traj[1](t)
+                #     z = drone_agent.ref_traj[2](t)
 
-                    xn = drone_agent.ref_traj[0](t+0.01)
-                    yn = drone_agent.ref_traj[1](t+0.01)
-                    yaw = np.arctan2(yn-y, xn-x)
-                    yaw = yaw%(np.pi*2)
-                    if yaw > np.pi/2:
-                        yaw -= 2*np.pi
+                #     xn = drone_agent.ref_traj[0](t+0.01)
+                #     yn = drone_agent.ref_traj[1](t+0.01)
+                #     yaw = np.arctan2(yn-y, xn-x)
+                #     yaw = yaw%(np.pi*2)
+                #     if yaw > np.pi/2:
+                #         yaw -= 2*np.pi
 
-                    yaw_ref.append(yaw)
-                    offset_x = 0.1*np.cos(yaw)
-                    offset_y = 0.1*np.sin(yaw)
-                    plt.figure(1)
-                    ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'r')
-                    # ax.scatter([x],[y],[z],color = 'm')
-                ax.set_xlabel('x')
-                ax.set_ylabel('y')
-                ax.set_zlabel('z')
+                #     yaw_ref.append(yaw)
+                #     offset_x = 0.1*np.cos(yaw)
+                #     offset_y = 0.1*np.sin(yaw)
+                #     plt.figure(1)
+                #     ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'r')
+                #     # ax.scatter([x],[y],[z],color = 'm')
+                # ax.set_xlabel('x')
+                # ax.set_ylabel('y')
+                # ax.set_zlabel('z')
 
-                plt.figure(2)
-                plt.plot(traj[1:,15], label='est')
-                plt.plot(traj[:-1,3], label='act')
-                plt.title('roll')
-                plt.legend()
+                # plt.figure(2)
+                # plt.plot(traj[1:,15], label='est')
+                # plt.plot(traj[:-1,3], label='act')
+                # plt.title('roll')
+                # plt.legend()
 
-                plt.figure(3)
-                plt.plot(traj[1:,19], label='est')
-                plt.plot(traj[:-1,7], label='act')
-                plt.title('pitch')
-                plt.legend()
+                # plt.figure(3)
+                # plt.plot(traj[1:,19], label='est')
+                # plt.plot(traj[:-1,7], label='act')
+                # plt.title('pitch')
+                # plt.legend()
 
-                plt.figure(4)
-                plt.plot(traj[1:,23], label='est')
-                plt.plot(traj[:-1,11], label='act')
-                plt.title('yaw')
-                plt.legend()
+                # plt.figure(4)
+                # plt.plot(traj[1:,23], label='est')
+                # plt.plot(traj[:-1,11], label='act')
+                # plt.title('yaw')
+                # plt.legend()
 
-                plt.show()
+                # plt.show()

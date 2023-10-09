@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 from nerfstudio.utils import colormaps
 from torchvision.utils import save_image
 import matplotlib.image
-
+import imgaug.augmenters as iaa
 # part of this script is adapted from iNeRF https://github.com/salykovaa/inerf
 # and NeRF-Pytorch https://github.com/yenchenlin/nerf-pytorch/blob/master/load_llff.py
 
@@ -147,7 +147,7 @@ class NeRF:
 
         return img
     
-    def render_Nerf_image_base(self, cam_state, save, save_name, iter, particle_number):
+    def render_Nerf_image_base(self, cam_state, fog_num, dark_num, save, save_name, iter, particle_number):
         rpy = R.from_matrix(cam_state[:3,:3])
         self.base_rotations.append(rpy)
         
@@ -162,12 +162,19 @@ class NeRF:
 
         img = tmp['rgb']
         img =(colormaps.apply_colormap(image=img, colormap_options=colormaps.ColormapOptions())).cpu().numpy()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = (img * 255).astype(np.uint8)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+
+        image1 = self.set_dark_properties(self.set_fog_properties(img,fog_num), dark_num)
+        image1 = image1/255.
 
         if save:
             output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/{save_name}{particle_number}.jpg"
             cv2.imwrite(output_dir, img)
 
-        return img
+        return image1
 
 
     def render_Nerf_image_simple(self,state_now, state_future, save, save_name, iter,particle_number):
@@ -216,6 +223,7 @@ class NeRF:
             # print(i)
         
             compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
+            # print("COMPARE",np.max(compare_img))
             compare_img_points = compare_img[batch[:,0],batch[:,1]]
             compare_tensor = torch.tensor(compare_img_points)
 
@@ -248,4 +256,16 @@ class NeRF:
         plt.imshow(rgb8)
         plt.show()
 
+    def set_fog_properties(self, img, val):
+        aug = iaa.Fog(
+            intensity_mean = (255, 255),
+            density_multiplier = (val, val)
+        )
+        image_fog = aug(image = img)
+        return image_fog
+ 
+    def set_dark_properties(self, img, val):
+        aug = iaa.Add(val*100)
+        image_dark = aug(image=img)
+        return image_dark
     

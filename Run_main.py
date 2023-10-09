@@ -373,7 +373,7 @@ class Run():
 
         return pose_est
 
-    def step(self, state, flag = False):
+    def step(self, state, iterationnum, fog_parameter, dark_parameter, flag = False):
         cam2world = np.zeros((3,4))
         cam2world[:,3] = state[:3]
         if not flag:
@@ -382,10 +382,9 @@ class Run():
             rot_mat = R.from_euler('xyz',[state[3], state[4], state[5]]).as_matrix()
         cam2world[:3,:3] = rot_mat
 
-        base_img = self.nerf.render_Nerf_image_base(cam2world,save=False, save_name = "base", iter=iter, particle_number=None)
-        # cv2.imshow("img ",base_img)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        base_img = self.nerf.render_Nerf_image_base(cam2world, fog_parameter, dark_parameter, save=False, save_name = "base", iter=iter, particle_number=None)
+        
+
 
         tmp = np.vstack((cam2world, np.array([[0,0,0,1]])))
         if self.last_state is None:
