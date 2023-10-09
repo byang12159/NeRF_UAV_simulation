@@ -19,6 +19,12 @@ from pathlib import Path
 script_dir = os.path.dirname(os.path.realpath(__file__))
 from Run_main import Run
 
+import logging
+from datetime import datetime
+
+import pathlib
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
     # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
     fov = 50
@@ -239,149 +245,183 @@ if __name__ == "__main__":
     spline_fn = os.path.join(script_dir, './camera_path_spline.json')    
     drone_agent = DroneAgent('drone',ref_spline=spline_fn)
     
-    cam_init = cam_states[0].reshape(4,4)
-    cam_init_pos = cam_init[0:3, 3]
-    cam_rpy = R.from_matrix(cam_init[0:3, 0:3]).as_euler('xyz')
+    logging.basicConfig(
+    filename='dataset.log',  # Specify the filename
+    level=logging.DEBUG,      # Set the logging level (e.g., DEBUG, INFO, WARNING)
+    # format='%(asctime)s - %(levelname)s - %(message)s'
+    format=''
+    )
 
-    drone_init = np.array([
-        cam_init_pos[0], 0, cam_rpy[0]-np.pi/2, 0, 
-        cam_init_pos[1], 0, cam_rpy[1], 0, 
-        cam_init_pos[2], 0, cam_rpy[2]+np.pi/2, 0, 
-    ])
+    for change_env_fog in range(0,10,1):
+        for change_env_dark in range(-1,0,1):
+            param_fog = change_env_fog/10.0
+            param_dark = change_env_dark/10.0
 
-    ref_init = np.array([0,1])
+            #Run each path twice with slighly perturbed env variables
+            for cycle in range(2):
+                if cycle == 1:
+                    environment_fog_noise = np.random.normal(0.0, 0.01)
+                    environment_dark_noise = np.random.normal(0.0, 0.01)
 
-    state = drone_init 
-    ref = ref_init 
-    traj = np.concatenate(([0], drone_init, drone_init, ref_init)).reshape((1,-1))
-    
-    camera_path = './NeRF_UAV_simulation/camera_path.json'
-    config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
-    mcl = Run(camera_path,config_fn, 80, 80, 50)      
-    est = []
-    for i in range(310):
-        gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
-        est_state = mcl.step(gt_state)
-        est.append(est_state)
-        est_state[5] = est_state[5]%(2*np.pi)
-        if est_state[5] > np.pi/2:
-            est_state[5] -= np.pi*2
-        est_state_full = np.array([
-            est_state[0],
-            state[1],
-            est_state[3],
-            state[3],
-            est_state[1],
-            state[5],
-            est_state[4],
-            state[7],
-            est_state[2],
-            state[9],
-            est_state[5],
-            state[11],
-        ])
-        init = np.concatenate((state, est_state_full, ref))
-        trace = drone_agent.TC_simulate(None, init, 0.1, 0.01)
-        state = trace[-1,1:13]
-        ref = trace[-1, 25:]
-        lstate = trace[-1,1:]
-        ltime = i*0.1
-        lstate = np.insert(lstate, 0, ltime).reshape((1,-1))
-        traj = np.vstack((traj,lstate))
+                    param_fog += environment_fog_noise
+                    param_dark += environment_dark_noise
 
-    #Render 2d Images
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+                    #Saturate fog value [0,1], dark value [-1,1]
+                    param_fog = max(min(param_fog, 1), 0)
+                    if param_dark > 0:
+                        param_dark = min(param_dark, 1)
+                    else:
+                        param_dark = max(param_dark, -1)
 
-    # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
-    # config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
-    # # config_fn = os.path.join(self.path)
-    # config_path = Path(config_fn)
-    # _, pipeline, _, step = eval_setup(
-    #     config_path,
-    #     eval_num_rays_per_chunk=None,
-    #     test_mode='inference'
-    # )
-    
+                logging.info(f"Dataset {datetime.now()}")
+                logging.info(f"Env Var {param_fog} fog, {param_dark} dark, Cycle#{cycle}")
 
-    # for i in range(len(traj)):
-    #     print(i)
-    #     x = traj[i, 1]
-    #     y = traj[i, 5]
-    #     z = traj[i, 9]
-    #     roll = traj[i, 3]
-    #     pitch = traj[i, 7]
-    #     yaw = traj[i, 11]
+                cam_init = cam_states[0].reshape(4,4)
+                cam_init_pos = cam_init[0:3, 3]
+                cam_rpy = R.from_matrix(cam_init[0:3, 0:3]).as_euler('xyz')
 
-    #     camera_to_world = np.zeros((3,4))
-    #     camera_to_world[:,3] = [x,y,z]
+                drone_init = np.array([
+                    cam_init_pos[0], 0, cam_rpy[0]-np.pi/2, 0, 
+                    cam_init_pos[1], 0, cam_rpy[1], 0, 
+                    cam_init_pos[2], 0, cam_rpy[2]+np.pi/2, 0, 
+                ])
 
-    #     rot_mat = R.from_euler('xyz',[roll+np.pi/2, pitch, yaw-np.pi/2]).as_matrix()
-    #     camera_to_world[:3, :3] = rot_mat
+                ref_init = np.array([0,4])
 
-    #     render_Nerf_image_simple(pipeline.model, camera_to_world, save=True, save_name = 'img_', iter = 0, particle_number = i)
+                state = drone_init 
+                ref = ref_init 
+                traj = np.concatenate(([0], drone_init, drone_init, ref_init)).reshape((1,-1))
+                
+                camera_path = './NeRF_UAV_simulation/camera_path.json'
+                config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
+                mcl = Run(camera_path,config_fn, 80, 80, 50)      
+                est = []
+                for i in range(80):
+                    gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
+                    est_state = mcl.step(gt_state)
+                    est.append(est_state)
+                    est_state[5] = est_state[5]%(2*np.pi)
+                    if est_state[5] > np.pi/2:
+                        est_state[5] -= np.pi*2
+                    est_state_full = np.array([
+                        est_state[0],
+                        state[1],
+                        est_state[3],
+                        state[3],
+                        est_state[1],
+                        state[5],
+                        est_state[4],
+                        state[7],
+                        est_state[2],
+                        state[9],
+                        est_state[5],
+                        state[11],
+                    ])
+                    init = np.concatenate((state, est_state_full, ref))
+                    trace = drone_agent.TC_simulate(None, init, 0.1, 0.01)
+                    state = trace[-1,1:13]
+                    ref = trace[-1, 25:]
+                    lstate = trace[-1,1:]
+                    ltime = i*0.1
+                    lstate = np.insert(lstate, 0, ltime).reshape((1,-1))
+                    traj = np.vstack((traj,lstate))
 
-    fig = plt.figure(1)
-    ax = fig.add_subplot(111, projection='3d')
-    # ax.plot(x, y, z, color='b')
-    t = np.linspace(0, 32, 1000)
-    x = drone_agent.ref_traj[0](t)
-    y = drone_agent.ref_traj[1](t)
-    z = drone_agent.ref_traj[2](t)
-    
-    plt.figure(1)
-    ax.plot(x,y,z, color = 'b')
-    ax.plot(traj[:,1], traj[:,5], traj[:,9], color = 'r')
-    est = np.array(est)
-    ax.plot(est[:,0], est[:,1], est[:,2], color = 'g')
-    yaw_ref = []
-    yaw_act = []
-    for i in range(len(traj)):
-        x, y, z = traj[i, 1], traj[i, 5], traj[i, 9]
-        yaw = traj[i, 11]
-        offset_x = 0.1*np.cos(yaw)
-        offset_y = 0.1*np.sin(yaw)
-        plt.figure(1)
-        ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'g')
-        yaw_act.append(yaw)
+                    logging.info( (gt_state.tolist() ,est_state.tolist() ,[param_fog, param_dark]) )
+                    print("iteration i = ",i)
 
-        t = traj[i, 25]
-        x = drone_agent.ref_traj[0](t)
-        y = drone_agent.ref_traj[1](t)
-        z = drone_agent.ref_traj[2](t)
+                #Render 2d Images
+                script_dir = os.path.dirname(os.path.realpath(__file__))
 
-        xn = drone_agent.ref_traj[0](t+0.01)
-        yn = drone_agent.ref_traj[1](t+0.01)
-        yaw = np.arctan2(yn-y, xn-x)
-        yaw = yaw%(np.pi*2)
-        if yaw > np.pi/2:
-            yaw -= 2*np.pi
+                # config_fn = os.path.join('./nerf_env/nerf_env/outputs/IRL2/nerfacto/2023-09-21_210511/config.yml')
+                # config_fn = './outputs/IRL2/nerfacto/2023-09-21_210511/config.yml'
+                # # config_fn = os.path.join(self.path)
+                # config_path = Path(config_fn)
+                # _, pipeline, _, step = eval_setup(
+                #     config_path,
+                #     eval_num_rays_per_chunk=None,
+                #     test_mode='inference'
+                # )
+                
 
-        yaw_ref.append(yaw)
-        offset_x = 0.1*np.cos(yaw)
-        offset_y = 0.1*np.sin(yaw)
-        plt.figure(1)
-        ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'r')
-        # ax.scatter([x],[y],[z],color = 'm')
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
+                # for i in range(len(traj)):
+                #     print(i)
+                #     x = traj[i, 1]
+                #     y = traj[i, 5]
+                #     z = traj[i, 9]
+                #     roll = traj[i, 3]
+                #     pitch = traj[i, 7]
+                #     yaw = traj[i, 11]
 
-    plt.figure(2)
-    plt.plot(traj[1:,15], label='est')
-    plt.plot(traj[:-1,3], label='act')
-    plt.title('roll')
-    plt.legend()
+                #     camera_to_world = np.zeros((3,4))
+                #     camera_to_world[:,3] = [x,y,z]
 
-    plt.figure(3)
-    plt.plot(traj[1:,19], label='est')
-    plt.plot(traj[:-1,7], label='act')
-    plt.title('pitch')
-    plt.legend()
+                #     rot_mat = R.from_euler('xyz',[roll+np.pi/2, pitch, yaw-np.pi/2]).as_matrix()
+                #     camera_to_world[:3, :3] = rot_mat
 
-    plt.figure(4)
-    plt.plot(traj[1:,23], label='est')
-    plt.plot(traj[:-1,11], label='act')
-    plt.title('yaw')
-    plt.legend()
+                #     render_Nerf_image_simple(pipeline.model, camera_to_world, save=True, save_name = 'img_', iter = 0, particle_number = i)
 
-    plt.show()
+                fig = plt.figure(1)
+                ax = fig.add_subplot(111, projection='3d')
+                # ax.plot(x, y, z, color='b')
+                t = np.linspace(0, 32, 1000)
+                x = drone_agent.ref_traj[0](t)
+                y = drone_agent.ref_traj[1](t)
+                z = drone_agent.ref_traj[2](t)
+                
+                plt.figure(1)
+                ax.plot(x,y,z, color = 'b')
+                ax.plot(traj[:,1], traj[:,5], traj[:,9], color = 'r')
+                est = np.array(est)
+                ax.plot(est[:,0], est[:,1], est[:,2], color = 'g')
+                yaw_ref = []
+                yaw_act = []
+                for i in range(len(traj)):
+                    x, y, z = traj[i, 1], traj[i, 5], traj[i, 9]
+                    yaw = traj[i, 11]
+                    offset_x = 0.1*np.cos(yaw)
+                    offset_y = 0.1*np.sin(yaw)
+                    plt.figure(1)
+                    ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'g')
+                    yaw_act.append(yaw)
+
+                    t = traj[i, 25]
+                    x = drone_agent.ref_traj[0](t)
+                    y = drone_agent.ref_traj[1](t)
+                    z = drone_agent.ref_traj[2](t)
+
+                    xn = drone_agent.ref_traj[0](t+0.01)
+                    yn = drone_agent.ref_traj[1](t+0.01)
+                    yaw = np.arctan2(yn-y, xn-x)
+                    yaw = yaw%(np.pi*2)
+                    if yaw > np.pi/2:
+                        yaw -= 2*np.pi
+
+                    yaw_ref.append(yaw)
+                    offset_x = 0.1*np.cos(yaw)
+                    offset_y = 0.1*np.sin(yaw)
+                    plt.figure(1)
+                    ax.plot([x, x+offset_x], [y, y+offset_y], [z, z], 'r')
+                    # ax.scatter([x],[y],[z],color = 'm')
+                ax.set_xlabel('x')
+                ax.set_ylabel('y')
+                ax.set_zlabel('z')
+
+                plt.figure(2)
+                plt.plot(traj[1:,15], label='est')
+                plt.plot(traj[:-1,3], label='act')
+                plt.title('roll')
+                plt.legend()
+
+                plt.figure(3)
+                plt.plot(traj[1:,19], label='est')
+                plt.plot(traj[:-1,7], label='act')
+                plt.title('pitch')
+                plt.legend()
+
+                plt.figure(4)
+                plt.plot(traj[1:,23], label='est')
+                plt.plot(traj[:-1,11], label='act')
+                plt.title('yaw')
+                plt.legend()
+
+                plt.show()

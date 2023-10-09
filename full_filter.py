@@ -213,7 +213,7 @@ class NeRF:
         output_dir = f"NeRF_UAV_simulation/images/Iteration_{iter}/base.png"
         cv2.imwrite(output_dir, base_img*255)
         for i, particle in enumerate(particle_poses):
-            print(i)
+            # print(i)
         
             compare_img = self.render_Nerf_image(R.from_matrix(particle[0:3,0:3]), particle[0:3,3],save=False, save_name='particle', iter=iter,particle_number=i)
             compare_img_points = compare_img[batch[:,0],batch[:,1]]

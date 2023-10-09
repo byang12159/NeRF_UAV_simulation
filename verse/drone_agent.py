@@ -19,6 +19,13 @@ from pathlib import Path
 from camera_path_spline import spline 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
+import logging
+from datetime import datetime
+
+import pathlib
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
+
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
     # print("SIMPLE RENDER C2W ...........\n",camera_to_world)
     fov = 50
