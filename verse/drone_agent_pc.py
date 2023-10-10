@@ -99,28 +99,46 @@ B[9, 2] = kT
 def apply_model(model, point):
     cc = model['coef_center']
     cr = model['coef_radius']
+    dim = model['dim']
 
-    x = point[0]
-    y = point[4]
-    z = point[8]
-    c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
-    r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
-    return c, abs(r)
+    if dim=='x' or dim=='y' or dim=='z':
+        x = point[0]
+        y = point[4]
+        z = point[8]
+        c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
+        r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+        return c, abs(r)
+    else: 
+        x = point[0]
+        y = point[4]
+        z = point[8]
+        if dim == 'roll':
+            w = point[2]
+        elif dim=='pitch':
+            w = point[6]
+        else:
+            w = point[10]
+        c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z + cc[4]*w 
+        r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z + cr[4]*w
+        return c, abs(r) 
 
 def get_vision_estimation(point: np.ndarray, models) -> Tuple[np.ndarray, np.ndarray]:
     x_c, x_r = apply_model(models[0], point)
     y_c, y_r = apply_model(models[1], point)
     z_c, z_r = apply_model(models[2], point)
+    roll_c, roll_r = apply_model(models[3], point)
+    pitch_c, pitch_r = apply_model(models[4], point)
+    yaw_c, yaw_r = apply_model(models[5], point)
     
     low = np.array([
         x_c-x_r, point[1], point[2], point[3], 
         y_c-y_r, point[5], point[6], point[7], 
-        z_c-z_r, point[9], point[10], point[11]
+        z_c-z_r, point[9], yaw_c-yaw_r, point[11]
     ])
     high = np.array([    
         x_c+x_r, point[1], point[2], point[3], 
         y_c+y_r, point[5], point[6], point[7], 
-        z_c+z_r, point[9], point[10], point[11]
+        z_c+z_r, point[9], yaw_c+yaw_r, point[11]
     ])
 
     return low, high

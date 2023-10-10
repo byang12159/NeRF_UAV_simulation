@@ -45,12 +45,27 @@ script_dir = os.path.realpath(os.path.dirname(__file__))
 def apply_model(model, point):
     cc = model['coef_center']
     cr = model['coef_radius']
-
-    x = (point.T)[0]
-    y = (point.T)[1]
-    z = (point.T)[2]
-    c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
-    r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+    dim = model['dim']
+    
+    if dim=='x' or dim=='y' or dim=='z':
+        x = (point.T)[0]
+        y = (point.T)[1]
+        z = (point.T)[2]
+        c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z 
+        r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z 
+    else:
+        x = (point.T)[0]
+        y = (point.T)[1]
+        z = (point.T)[2]
+        if dim=='roll':
+            w = (point.T)[3]
+        elif dim=='pitch':
+            w = (point.T)[4]
+        else:
+            w = (point.T)[5]
+        c = cc[0] + cc[1]*x + cc[2]*y + cc[3]*z + cc[4]*w 
+        r = cr[0] + cr[1]*x + cr[2]*y + cr[3]*z + cr[4]*w
+        
     return c, abs(r)
 
 def create_box(box):
@@ -345,7 +360,7 @@ def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_ste
             computation_steps, 
             params={
                 'bloating_method':'GLOBAL',
-                'sim_trace_num': 100
+                'sim_trace_num': 50
                 # 'traces':trajectories
             }
         )
@@ -503,6 +518,54 @@ def partitionE(E):
             partition_list.append(partition)
 
     return partition_list
+
+def test_accuracy(data, M):
+    state_array, est_array, E_array = data 
+    total_data = 0
+    data_satisfy = 0
+    notin0 = 0
+    notin1 = 0
+    notin2 = 0
+    notin3 = 0
+    notin4 = 0
+    notin5 = 0
+    # Get accuracy of perception contract
+    for j in range(len(state_array)):
+        gt = np.array(state_array[j])
+        est = np.array(est_array[j])
+
+        cx, rx = apply_model(M[0], gt)
+        cy, ry = apply_model(M[1], gt)
+        cz, rz = apply_model(M[2], gt)
+        croll, rroll = apply_model(M[3], gt)
+        cpitch, rpitch = apply_model(M[4], gt)
+        cyaw, ryaw = apply_model(M[5], gt)
+        
+
+        total_data += 1
+        if (est[0]>=cx-rx and est[0]<=cx+rx and \
+            est[1]>=cy-ry and est[1]<=cy+ry and \
+            est[2]>=cz-rz and est[2]<=cz+rz and \
+            est[3]>=croll-rroll and est[3]<=croll+rroll and \
+            est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch and \
+            est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw
+            ):
+            data_satisfy += 1 
+        else:
+            if not (est[0]>=cx-rx and est[0]<=cx+rx):
+                notin0 += 1 
+            if not (est[1]>=cy-ry and est[1]<=cy+ry):
+                notin1 += 1                
+            if not (est[2]>=cz-rz and est[2]<=cz+rz):
+                notin2 += 1
+            if not (est[3]>=croll-rroll and est[3]<=croll+rroll):
+                notin3 += 1
+            if not (est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch):
+                notin4 += 1
+            if not (est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw):
+                notin5 += 1
+    print(data_satisfy/total_data)
+    print(total_data, notin0, notin1, notin2, notin3, notin4, notin5)           
 
 if __name__ == "__main__":
     fn = os.path.join(script_dir, '../camera_path.json')

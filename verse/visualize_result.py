@@ -103,11 +103,11 @@ if __name__ == "__main__":
         
         object_list.append(box)
 
-    with open('vcs_sim_exp1_safe.pickle','rb') as f:
+    with open('vcs_sim_exp1_test.pickle','rb') as f:
         state_list = pickle.load(f)
-    with open('vcs_estimate_exp1_safe.pickle','rb') as f:
+    with open('vcs_estimate_exp1_test.pickle','rb') as f:
         est_list = pickle.load(f)
-    with open('vcs_init_exp1_safe.pickle','rb') as f:
+    with open('vcs_init_exp1_test.pickle','rb') as f:
         e_list = pickle.load(f)
 
     total_data = 0
@@ -115,6 +115,9 @@ if __name__ == "__main__":
     notin0 = 0
     notin1 = 0
     notin2 = 0
+    notin3 = 0
+    notin4 = 0
+    notin5 = 0
     # Get accuracy of perception contract
     for i in range(len(state_list)):
         for j in range(len(state_list[i])):
@@ -124,11 +127,19 @@ if __name__ == "__main__":
             cx, rx = apply_model(M[0], gt)
             cy, ry = apply_model(M[1], gt)
             cz, rz = apply_model(M[2], gt)
+            croll, rroll = apply_model(M[3], gt)
+            cpitch, rpitch = apply_model(M[4], gt)
+            cyaw, ryaw = apply_model(M[5], gt)
+            
 
             total_data += 1
             if (est[0]>=cx-rx and est[0]<=cx+rx and \
                 est[1]>=cy-ry and est[1]<=cy+ry and \
-                est[2]>=cz-rz and est[2]<=cz+rz):
+                est[2]>=cz-rz and est[2]<=cz+rz and \
+                est[3]>=croll-rroll and est[3]<=croll+rroll and \
+                est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch and \
+                est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw
+                ):
                 data_satisfy += 1 
             else:
                 if not (est[0]>=cx-rx and est[0]<=cx+rx):
@@ -137,9 +148,63 @@ if __name__ == "__main__":
                     notin1 += 1                
                 if not (est[2]>=cz-rz and est[2]<=cz+rz):
                     notin2 += 1
+                if not (est[3]>=croll-rroll and est[3]<=croll+rroll):
+                    notin3 += 1
+                if not (est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch):
+                    notin4 += 1
+                if not (est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw):
+                    notin5 += 1
     print(data_satisfy/total_data)
-    print(total_data, notin0, notin1, notin2)
-    
+    print(total_data, notin0, notin1, notin2, notin3, notin4, notin5)   
+
+    with open(os.path.join(script_dir, 'exp2_train1.pickle'),'rb') as f:
+        state_array, trace_array, e_array = pickle.load(f)
+
+    total_data = 0
+    data_satisfy = 0
+    notin0 = 0
+    notin1 = 0
+    notin2 = 0
+    notin3 = 0
+    notin4 = 0
+    notin5 = 0
+    # Get accuracy of perception contract
+    for j in range(len(state_array)):
+        gt = np.array(state_array[j])
+        est = np.array(trace_array[j])
+
+        cx, rx = apply_model(M[0], gt)
+        cy, ry = apply_model(M[1], gt)
+        cz, rz = apply_model(M[2], gt)
+        croll, rroll = apply_model(M[3], gt)
+        cpitch, rpitch = apply_model(M[4], gt)
+        cyaw, ryaw = apply_model(M[5], gt)
+        
+
+        total_data += 1
+        if (est[0]>=cx-rx and est[0]<=cx+rx and \
+            est[1]>=cy-ry and est[1]<=cy+ry and \
+            est[2]>=cz-rz and est[2]<=cz+rz and \
+            est[3]>=croll-rroll and est[3]<=croll+rroll and \
+            est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch and \
+            est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw
+            ):
+            data_satisfy += 1 
+        else:
+            if not (est[0]>=cx-rx and est[0]<=cx+rx):
+                notin0 += 1 
+            if not (est[1]>=cy-ry and est[1]<=cy+ry):
+                notin1 += 1                
+            if not (est[2]>=cz-rz and est[2]<=cz+rz):
+                notin2 += 1
+            if not (est[3]>=croll-rroll and est[3]<=croll+rroll):
+                notin3 += 1
+            if not (est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch):
+                notin4 += 1
+            if not (est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw):
+                notin5 += 1
+    print(data_satisfy/total_data)
+    print(total_data, notin0, notin1, notin2, notin3, notin4, notin5)   
 
     # Visualize simulation trajectories
     for i in range(len(state_list)):
@@ -190,5 +255,13 @@ if __name__ == "__main__":
 
     object_list.append(trajectory)
 
-    o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    for obj in object_list:
+        vis.add_geometry(obj)
+    # vis.add_geometry(point_cloud2)
+    vis.get_render_option().line_width = 20
+    # vis.get_render_option().point_size = 20
+    vis.run()
+    # o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)
     
