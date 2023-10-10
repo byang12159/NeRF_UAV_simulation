@@ -18,6 +18,7 @@ from nerfstudio.utils.eval_utils import eval_setup
 from pathlib import Path
 script_dir = os.path.dirname(os.path.realpath(__file__))
 from Run_main import Run
+from camera_path_spline import spline
 
 import logging
 from datetime import datetime
@@ -108,9 +109,9 @@ class DroneAgent(BaseAgent):
         self.uncertain_parameters = None
         self.decision_logic = ControllerIR.empty()
 
-        with open(ref_spline, 'r') as f:
-            data = json.load(f)
-
+        # with open(ref_spline, 'r') as f:
+        #     data = json.load(f)
+        data = spline
         tks_x = (data['x']['0'],data['x']['1'],data['x']['2'])
         tks_y = (data['y']['0'],data['y']['1'],data['y']['2'])
         tks_z = (data['z']['0'],data['z']['1'],data['z']['2'])
@@ -239,6 +240,12 @@ if __name__ == "__main__":
     with open(os.path.join(script_dir, './verse/exp2_safe.pickle'), 'rb') as f:
         M, E, _, _ = pickle.load(f)
 
+    E = np.array([
+        [
+            [0, -0.1],
+            [0.1, 0]
+        ]
+    ])
     fn = os.path.join(script_dir, './camera_path.json')
     with open(fn, 'r') as f:
         data = json.load(f)
@@ -295,10 +302,10 @@ if __name__ == "__main__":
         mcl = Run(camera_path,config_fn, 80, 80, 50)      
         est = []
         gt = []
-        for i in range(300):
-            print(f"======> Iter {i}")
+        for j in range(300):
+            print(f"======> Iter {i} {j}")
             gt_state = np.array([state[0], state[4], state[8], state[2], state[6], state[10]])
-            est_state = mcl.step(gt_state)
+            est_state = mcl.step(gt_state, 0, param_fog, param_dark)
             gt.append(gt_state)
             est.append(est_state)
             est_state[5] = est_state[5]%(2*np.pi)
@@ -307,11 +314,13 @@ if __name__ == "__main__":
             est_state_full = np.array([
                 est_state[0],
                 state[1],
-                est_state[3],
+                # est_state[3],
+                state[2],
                 state[3],
                 est_state[1],
                 state[5],
-                est_state[4],
+                # est_state[4],
+                state[6],
                 state[7],
                 est_state[2],
                 state[9],
@@ -329,9 +338,9 @@ if __name__ == "__main__":
 
         traj_list.append(gt)
         estimate_traj_list.append(est)
-        with open(os.path.join(script_dir, './verse/vcs_sim_exp1_safe.pickle'),'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_sim_exp1_test.pickle'),'wb+') as f:
             pickle.dump(traj_list, f)
-        with open(os.path.join(script_dir, './verse/vcs_estimate_exp1_safe.pickle'),'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_estimate_exp1_test.pickle'),'wb+') as f:
             pickle.dump(estimate_traj_list, f)
-        with open(os.path.join(script_dir, './verse/vcs_init_exp1_safe.pickle'), 'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_init_exp1_test.pickle'), 'wb+') as f:
             pickle.dump(init_list, f)

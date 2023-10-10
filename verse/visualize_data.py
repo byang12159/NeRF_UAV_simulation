@@ -40,14 +40,14 @@ def get_vision_estimation(point: np.ndarray, models) -> Tuple[np.ndarray, np.nda
 
     return low, high
 
-with open(os.path.join(script_dir, 'exp2_train2.pickle'), 'rb') as f:
+with open(os.path.join(script_dir, 'exp2_train4.pickle'), 'rb') as f:
     data = pickle.load(f)
 
 state_array, trace_array, env_array = data 
 
 E = np.array([
-    [0., 0.],
-    [1., 1.]
+    [-0.1, -1.1],
+    [1.1, 0.1]
 ])
 E = partitionE(E)
 
@@ -55,7 +55,7 @@ M = computeContract(data, E)
 
 lb1, ub1 = get_vision_estimation(state_array, M)
 
-for i in range(8):
+for i in range(12):
     E = refineEnv(E, None, data, i)
 
 M = computeContract(data, E)

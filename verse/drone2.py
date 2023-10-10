@@ -29,6 +29,8 @@ import pyvista as pv
 from scipy.spatial.transform import Rotation as R
 import open3d as o3d
 
+from z3 import *
+
 script_dir = os.path.realpath(os.path.dirname(__file__))
 
 # def apply_model_batch(model, point):
@@ -68,6 +70,16 @@ def apply_model(model, point):
         
     return c, abs(r)
 
+def get_vision_estimation_batch(point, models):
+    x_c, x_r = apply_model(models[0], point)
+    y_c, y_r = apply_model(models[1], point)
+    z_c, z_r = apply_model(models[2], point)
+    yaw_c, yaw_r = apply_model(models[5], point)    
+    low = np.array([x_c-x_r, y_c-y_r, z_c-z_r, yaw_c-yaw_r])
+    high = np.array([x_c+x_r, y_c+y_r, z_c+z_r, yaw_c+yaw_r])
+
+    return low, high 
+
 def create_box(box):
                 
     translation = box[3:6]
@@ -106,7 +118,7 @@ def create_box(box):
     
     
     rotation_matrix = rotation_matrixZ@rotation_matrixY@rotation_matrixX
-    print(rotation_matrix)
+    # print(rotation_matrix)
     # Repeat the center position [x, y, z] eight times
     eight_points = np.tile(translation, (8, 1))
 
@@ -239,7 +251,69 @@ def verify_step(point, M, computation_steps, time_steps, ref):
     # tmp = pickle.dumps(traces.root.trace['a1'])
     return np.array(traces.root.trace['a1'])
 
-def check_containment(post_rect, R, idx):
+def check_containment(post_rect, idx):
+    # return 'safe'
+    s = Solver()
+    x,y,z = Reals('x y z')
+    # High gate
+    c_high = And(
+        -3.724*x-0.4807<=y, 
+        y<=-3.724*x-0.4653, 
+        -0.025-0.1 <= z,
+        z <= 0.091+0.1,
+        -0.251-0.1 <=x, 
+        x<=  -0.198+0.1,
+        Or(
+            z<=-0.017266, 
+            z>=0.083266, 
+            x<=-0.24326666667, 
+            x>=-0.2057
+        )
+    )
+    # Middle Gate 
+    c_mid = And(
+        -0.123*x + 0.0352 <= y,
+        y <= -0.123*x+0.05073,
+        -0.084-0.1 <= z, 
+        z<= 0.035+0.1,
+        0.271-0.1 <= x,
+        x<= 0.472+0.1,
+        Or(
+            z <= -0.07626 ,
+            z >= 0.027266 ,
+            x<= 0.27873 ,
+            x>= 0.46426
+        )
+    )
+    # Low Gate 
+    c_low = And(
+        1.966*x-0.0127 <= y, 
+        y <=  1.966*x+0.0027,
+        -0.125-0.1  <= z,
+        z <= -0.017+0.1,
+        -0.239-0.1 <= x, 
+        x<=  -0.147+0.1,
+        Or(
+            z <= -0.1172,
+            z >= -0.024733,
+            x<= -0.2313,
+            x>= -0.1547
+        )
+    )
+    s.add(Or(c_low, c_mid, c_high))
+    for i in range(0, len(post_rect), 2):
+        low = post_rect[i]
+        high = post_rect[i+1]
+        s.push()
+        s.add(
+            x>=low[1], x<=high[1],
+            y>=low[5], y<=high[5],
+            z>=low[9], z<=high[9]
+        )
+        if s.check()==sat:
+            print('result unknown')
+            return 'unknown'
+        s.pop()
     return 'safe'
 
 class SimTreeNode:
@@ -311,6 +385,16 @@ def generate_trajectories(drone_agent, M, X_0, ref, num_sample_x, num_sample_y, 
     # Return all results
     return all_traces, init_set
 
+# def compensate(r):
+#     r[::2, 1] -= 0.005
+#     r[1::2, 1] += 0.005
+#     r[::2, 5] -= 0.005
+#     r[1::2, 5] += 0.005
+#     r[::2, 9] -= 0.01
+#     r[1::2, 9] += 0.01
+#     return r
+
+
 def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_step = 10, C_num = 30):
     # x, y, z, yaw, pitch, v
     # state = np.array([
@@ -323,8 +407,8 @@ def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_ste
     num_sample_x = 5
     num_sample_y = 1
     computation_steps = 0.1
-    C_compute_step = 10
-    C_num = 30
+    C_compute_step = 20    
+    C_num = 15
     parallel = True
     time_steps = 0.01
     
@@ -337,6 +421,7 @@ def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_ste
 
     # fig = pv.Plotter()
     for C_step in range(C_num):
+        print(C_step)
         # try:
         # Generate simulation trajectories
         drone = DroneAgentPC('a1', M)
@@ -360,7 +445,7 @@ def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_ste
             computation_steps, 
             params={
                 'bloating_method':'GLOBAL',
-                'sim_trace_num': 50
+                'sim_trace_num': 55
                 # 'traces':trajectories
             }
         )
@@ -371,15 +456,21 @@ def compute_and_check(X_0, M, R, depth=0, computation_steps = 0.1, C_compute_ste
    
         # Check containment
         reachable_set = np.array(res.root.trace['a1'])
+        next_init = copy.deepcopy(reachable_set[-2:, 1:])
+
+        # reachable_set = compensate(reachable_set)
+        # reachable_set[::2, 9] -= 0.01
+        # reachable_set[1::2, 9] += 0.01
+
         if reachtube is None: 
             reachtube = reachable_set
         else:
             reachtube = np.vstack((reachtube, reachable_set))
-        next_init = reachable_set[-2:, 1:]
         C_set = np.hstack((np.array([[C_step+1],[C_step+1]]), next_init))
-        res = check_containment(C_set, R, C_step+1)
+
+        res = check_containment(reachable_set, C_step)
         if res == 'unsafe' or res == 'unknown':
-            return res, C_list
+            return res, C_list, reachtube
 
         C_list.append(C_set)
         state = next_init[:,:12] 
@@ -410,31 +501,41 @@ def visualize_outlier(num_outlier_list, E, idx = 0):
 
 def refineEnv(E_in, M, data, id = 0, vis = False):
     E = copy.deepcopy(E_in)
-    state_array, trace_array, E_array = data 
 
-    dist_array = np.linalg.norm(state_array[:,:5]-trace_array[:,:5], axis=1)
+    E_center_list = []
+    for Ep in E:
+        E_center = (Ep[0,:]+Ep[1,:])/2
+        E_center_list.append(np.linalg.norm(E_center))
 
-    # Get environmental parameters of those points 
-    percentile = np.percentile(dist_array, 90)
-
-    # Remove those environmental parameters from E
-    idx_list = np.where(dist_array>percentile)[0]
-
-    E = np.array(E)
-    num_outlier_list = np.zeros(E.shape[0])
-    for idx in idx_list:
-        contains = np.where(
-            (E[:,0,0]<E_array[idx,0]) & \
-            (E_array[idx,0]<E[:,1,0]) & \
-            (E[:,0,1]<E_array[idx,1]) & \
-            (E_array[idx,1]<E[:,1,1])
-        )[0]
-        num_outlier_list[contains] += 1
-    sorted_outlier = np.argsort(num_outlier_list)
-    delete_outlier = sorted_outlier[-10:] 
-    if vis:
-        visualize_outlier(num_outlier_list, E, id)
+    sorted_outlier = np.argsort(E_center_list)
+    delete_outlier = sorted_outlier[-4:] 
     E = np.delete(E, delete_outlier, axis=0)
+
+    # state_array, trace_array, E_array = data 
+
+    # dist_array = np.linalg.norm(state_array[:,:5]-trace_array[:,:5], axis=1)
+
+    # # Get environmental parameters of those points 
+    # percentile = np.percentile(dist_array, 90)
+
+    # # Remove those environmental parameters from E
+    # idx_list = np.where(dist_array>percentile)[0]
+
+    # E = np.array(E)
+    # num_outlier_list = np.zeros(E.shape[0])
+    # for idx in idx_list:
+    #     contains = np.where(
+    #         (E[:,0,0]<=E_array[idx,0]) & \
+    #         (E_array[idx,0]<=E[:,1,0]) & \
+    #         (E[:,0,1]<=E_array[idx,1]) & \
+    #         (E_array[idx,1]<=E[:,1,1])
+    #     )[0]
+    #     num_outlier_list[contains] += 1
+    # sorted_outlier = np.argsort(num_outlier_list)
+    # delete_outlier = sorted_outlier[-10:] 
+    # if vis:
+    #     visualize_outlier(num_outlier_list, E, id)
+    # E = np.delete(E, delete_outlier, axis=0)
     return E 
 
 def refineState(X, idx):
@@ -483,12 +584,14 @@ def findM(X_0, E_0, R, data):
     E = E_0 
     M = computeContract(data, E)
     queue = [(X_0,0)]
+    idx = 0
     while len(queue) != 0:
         P, idx = queue.pop(0)
-        res, C_list = compute_and_check(P, M, R, idx)
+        res, C_list, reachtube = compute_and_check(P, M, R, idx)
+        print(f">>>>> {idx}")
         if res == "unsafe":
             print("unsafe")
-            return None, None, P, C_list
+            return None, E, P, C_list, reachtube
         elif res == "unknown":
             print("unknown")
             if False:
@@ -498,11 +601,12 @@ def findM(X_0, E_0, R, data):
             else:
                 queue.append((P, idx+1))
             E = refineEnv(E, M, data, True)
-            if len(E) <= 10:
-                return None, None, P, C_list
+            if len(E) <= 2:
+                return None, E, P, C_list, reachtube
             M = computeContract(data, E)
+    print(idx)
     print("safe")
-    return M, E, None, C_list
+    return M, E, None, C_list, reachtube
 
 def partitionE(E):
     partition_list = []
@@ -605,22 +709,40 @@ if __name__ == "__main__":
     time_steps = 0.01
 
     E = np.array([
-        [0, 0],
-        [1.0, 1.0]
+        [0.0, -1.0],
+        [1.0, 0.0]
     ])
 
     E = partitionE(E)
 
-    fn = os.path.join(script_dir, './exp2_train1.pickle')
+    fn = os.path.join(script_dir, './exp2_train4.pickle')
     with open(fn, 'rb') as f:
         data = pickle.load(f)
     
-    for i in range(5):
-        E = refineEnv(E, None, data, i)
+    # for i in range(9):
+    #     E = refineEnv(E, None, data, i)
+    # E = np.array([
+    #     [[0, -0.1],
+    #     [0.1, 0.0]],
+    #     # [[0, -0.2],
+    #     #  [0.1, -0.1]],
+    #     # [[0, -0.3],
+    #     #  [0.1, -0.2]],  
+    # ])
+    # for i in range(2):
+    #     for j in range(2):
+    #         Ep = np.array([
+    #             [i*0.1, (j+1)*(-0.1)],
+    #             [(i+1)*0.1, j*(-0.1)]
+    #         ])
+    #         if i==0 and j==0:
+    #             E = Ep.reshape((1,2,2))
+    #         else:
+    #             E = np.concatenate((E, Ep.reshape((1,2,2))), axis=0)
+    # M = computeContract(data, E)
 
-    M = computeContract(data, E)
-
-    res, C_list, reachtube = compute_and_check(X_0, M, None,0, computation_steps, C_compute_step, C_num)
+    # res, C_list, reachtube = compute_and_check(X_0, M, None,0, computation_steps, C_compute_step, C_num)
+    M, E, Xc, C_list, reachtube = findM(X_0, E, None, data)
     # print(C_list)
     with open(os.path.join(script_dir, 'exp2_safe.pickle'), 'wb+') as f: 
         pickle.dump((M, E, C_list, reachtube), f)
@@ -656,15 +778,21 @@ if __name__ == "__main__":
     for i in range(0, reachtube.shape[0], 2):
         lb = reachtube[i,[1,5,9]]
         ub = reachtube[i+1,[1,5,9]]
-        h, w, l = ub-lb 
+        l, w, h = ub-lb 
         x,y,z = (lb+ub)/2 
         box = [h,w,l,x,y,z,0,0,0]
-
         boxes3d_pts = create_box(box)
         boxes3d_pts = o3d.utility.Vector3dVector(boxes3d_pts)
         box = o3d.geometry.OrientedBoundingBox.create_from_points(boxes3d_pts)
         box.color = [1, 0, 0]  #Box color would be red box.color = [R,G,B]
-        
         object_list.append(box)
+
+        # box = [h,w,l,x,y,z,0,0,0]
+        # boxes3d_pts = create_box(box)
+        # boxes3d_pts = o3d.utility.Vector3dVector(boxes3d_pts)
+        # box = o3d.geometry.OrientedBoundingBox.create_from_points(boxes3d_pts)
+        # box.color = [0, 0, 1]  #Box color would be red box.color = [R,G,B]
+        
+        # object_list.append(box)
 
     o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)

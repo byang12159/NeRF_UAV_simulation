@@ -2,9 +2,10 @@ import pickle
 import os 
 import open3d as o3d
 import numpy as np 
-from camera_path_spline import spline
+from camera_path_spline_new import spline
 from scipy.interpolate import UnivariateSpline
-from drone2 import apply_model
+from drone2 import apply_model, remove_data, get_vision_estimation_batch
+import matplotlib.pyplot as plt 
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -92,9 +93,9 @@ if __name__ == "__main__":
     for i in range(0, reachtube.shape[0], 2):
         lb = reachtube[i,[1,5,9]]
         ub = reachtube[i+1,[1,5,9]]
-        h, w, l = ub-lb 
+        l, w, h = ub-lb 
         x,y,z = (lb+ub)/2 
-        box = [h,w,l,x,y,z,0,0,0]
+        box = [h+0.02,w,l,x,y,z,0,0,0]
 
         boxes3d_pts = create_box(box)
         boxes3d_pts = o3d.utility.Vector3dVector(boxes3d_pts)
@@ -103,11 +104,11 @@ if __name__ == "__main__":
         
         object_list.append(box)
 
-    with open('vcs_sim_exp1_test.pickle','rb') as f:
+    with open('vcs_sim_exp1_safe.pickle','rb') as f:
         state_list = pickle.load(f)
-    with open('vcs_estimate_exp1_test.pickle','rb') as f:
+    with open('vcs_estimate_exp1_safe.pickle','rb') as f:
         est_list = pickle.load(f)
-    with open('vcs_init_exp1_test.pickle','rb') as f:
+    with open('vcs_init_exp1_safe.pickle','rb') as f:
         e_list = pickle.load(f)
 
     total_data = 0
@@ -157,8 +158,11 @@ if __name__ == "__main__":
     print(data_satisfy/total_data)
     print(total_data, notin0, notin1, notin2, notin3, notin4, notin5)   
 
-    with open(os.path.join(script_dir, 'exp2_train1.pickle'),'rb') as f:
-        state_array, trace_array, e_array = pickle.load(f)
+    with open(os.path.join(script_dir, 'exp2_train4.pickle'),'rb') as f:
+        data = pickle.load(f)
+
+    data_removed = remove_data(data, E)
+    state_array, trace_array, e_array = data_removed
 
     total_data = 0
     data_satisfy = 0
@@ -185,8 +189,8 @@ if __name__ == "__main__":
         if (est[0]>=cx-rx and est[0]<=cx+rx and \
             est[1]>=cy-ry and est[1]<=cy+ry and \
             est[2]>=cz-rz and est[2]<=cz+rz and \
-            est[3]>=croll-rroll and est[3]<=croll+rroll and \
-            est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch and \
+            # est[3]>=croll-rroll and est[3]<=croll+rroll and \
+            # est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch and \
             est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw
             ):
             data_satisfy += 1 
@@ -197,10 +201,10 @@ if __name__ == "__main__":
                 notin1 += 1                
             if not (est[2]>=cz-rz and est[2]<=cz+rz):
                 notin2 += 1
-            if not (est[3]>=croll-rroll and est[3]<=croll+rroll):
-                notin3 += 1
-            if not (est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch):
-                notin4 += 1
+            # if not (est[3]>=croll-rroll and est[3]<=croll+rroll):
+            #     notin3 += 1
+            # if not (est[4]>=cpitch-rpitch and est[4]<=cpitch+rpitch):
+            #     notin4 += 1
             if not (est[5]>=cyaw-ryaw and est[5]<=cyaw+ryaw):
                 notin5 += 1
     print(data_satisfy/total_data)
@@ -208,6 +212,8 @@ if __name__ == "__main__":
 
     # Visualize simulation trajectories
     for i in range(len(state_list)):
+        if i==2:
+            continue
         traj = np.array(state_list[i])
         trajectory_points=  traj[:,:3]
 
@@ -263,5 +269,74 @@ if __name__ == "__main__":
     vis.get_render_option().line_width = 20
     # vis.get_render_option().point_size = 20
     vis.run()
+
+    with open(os.path.join(script_dir, './exp2_train4.pickle'), 'rb') as f:
+        data = pickle.load(f)
+    state_array, trace_array, E_array = data
+
+    miss_array = np.zeros(len(E))
+    total_array = np.zeros(len(E))
+    for i, Ep in enumerate(E):
+        in_part = np.where(
+            (Ep[0,0]<=E_array[:,0]) & \
+            (E_array[:,0]<=Ep[1,0]) & \
+            (Ep[0,1]<=E_array[:,1]) & \
+            (E_array[:,1]<=Ep[1,1])
+        )[0]
+        total_array[i] = len(in_part)
+        state_contain = state_array[in_part]
+        trace_contain = trace_array[in_part]
+        E_contain = E_array[in_part]
+        # for j in range(len(in_part)):
+        for j in range(len(state_contain)):
+            lb, ub = get_vision_estimation_batch(state_contain[j,:], M)
+            if trace_contain[j,0]<lb[0] or trace_contain[j,0]>ub[0] or \
+                trace_contain[j,1]<lb[1] or trace_contain[j,1]>ub[1] or \
+                trace_contain[j,2]<lb[2] or trace_contain[j,2]>ub[2] or \
+                trace_contain[j,5]<lb[3] or trace_contain[j,5]>ub[3]:
+                pass
+                miss_array[i] += 1
+
+    accuracy_array = (total_array-miss_array)/total_array
+    print((total_array-miss_array).sum()/total_array.sum())
+
+
+
+    full_e = np.ones((10, 10))*(-1)
+    min_acc = float('inf')
+    min_acc_e1 = 0
+    min_acc_e2 = 0
+    for i in range(len(E)):
+        E_part = E[i]
+        idx1 = round((E_part[0,0]-0.0)/0.1)
+        idx2 = round((E_part[0,1]-(-1.0))/0.1)
+        full_e[idx1, idx2] = accuracy_array[i]
+        if accuracy_array[i]!=0 and accuracy_array[i]<min_acc:
+            min_acc = accuracy_array[i]
+            min_acc_e1 = E_part[0,0]
+            min_acc_e2 = E_part[0,1]
+    print(min_acc, min_acc_e1, min_acc_e2)
+    # full_e = full_e/np.max(full_e)
+    rgba_image = np.zeros((10, 10, 4))  # 4 channels: R, G, B, A
+    rgba_image[..., :3] = plt.cm.viridis(full_e)[..., :3]  # Apply a colormap    
+    mask = np.where(full_e<0)
+    rgba_image[..., 3] = 1.0  # Set alpha to 1 (non-transparent)
+
+    # Apply the mask to make some pixels transparent
+    rgba_image[mask[0], mask[1], :3] = 1  # Set alpha to 0 (transparent) for masked pixels
+    plt.imshow(rgba_image)
+
     # o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)
     
+    # ax = plt.gca()
+    # ax.set_xticks(np.round(np.arange(0,12,2)-0.5,1))
+    # ax.set_yticks(np.round(np.arange(0,12,2)-0.5,1))
+    # ax.set_xticklabels(np.round(np.arange(-1.0, 0.05, 0.2),2), fontsize=14)
+    # ax.set_yticklabels(np.round(np.arange(0, 1.05, 0.2),2), fontsize=14)
+    # plt.xlabel('Ambient light intensity', fontsize=16)
+    # plt.ylabel('Fog level', fontsize=16)
+    # # plt.xticks(list(range(0,14,2)), np.round(np.arange(-0.05,0.6,0.1),2))
+    # # plt.yticks(list(range(0,20,2)), np.round(np.arange(0.25, 1.2, 0.1),2))
+
+
+    # plt.show()

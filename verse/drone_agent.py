@@ -16,15 +16,11 @@ from nerfstudio.utils import colormaps
 import cv2
 from nerfstudio.utils.eval_utils import eval_setup
 from pathlib import Path
-from camera_path_spline import spline 
+from camera_path_spline_new import spline 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 import logging
 from datetime import datetime
-
-import pathlib
-temp = pathlib.PosixPath
-pathlib.PosixPath = pathlib.WindowsPath
 
 def render_Nerf_image_simple(model, camera_to_world, save, save_name, iter,particle_number):
     # print("SIMPLE RENDER C2W ...........\n",camera_to_world)

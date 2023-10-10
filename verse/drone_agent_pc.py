@@ -133,11 +133,15 @@ def get_vision_estimation(point: np.ndarray, models) -> Tuple[np.ndarray, np.nda
     low = np.array([
         x_c-x_r, point[1], point[2], point[3], 
         y_c-y_r, point[5], point[6], point[7], 
+        # x_c-x_r, point[1], roll_c-roll_r, point[3], 
+        # y_c-y_r, point[5], pitch_c-pitch_r, point[7], 
         z_c-z_r, point[9], yaw_c-yaw_r, point[11]
     ])
     high = np.array([    
         x_c+x_r, point[1], point[2], point[3], 
         y_c+y_r, point[5], point[6], point[7], 
+        # x_c+x_r, point[1], roll_c+roll_r, point[3], 
+        # y_c+y_r, point[5], pitch_c+pitch_r, point[7], 
         z_c+z_r, point[9], yaw_c+yaw_r, point[11]
     ])
 

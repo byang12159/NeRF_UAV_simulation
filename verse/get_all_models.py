@@ -13,12 +13,12 @@ import json
 def get_all_models(data):
     state_array, trace_array, E_array = data
 
-    model_x = compute_model_x(state_array, trace_array, E_array, 0.5, 0.96)
-    model_y = compute_model_y(state_array, trace_array, E_array, 0.5, 0.96)
-    model_z = compute_model_z(state_array, trace_array, E_array, 0.5, 0.96)
-    model_roll = compute_model_roll(state_array, trace_array, E_array, 0.5, 0.96)
-    model_pitch = compute_model_pitch(state_array, trace_array, E_array, 0.5, 0.96) 
-    model_yaw = compute_model_yaw(state_array, trace_array, E_array, 0.5, 0.96)
+    model_x = compute_model_x(state_array, trace_array, E_array, 0.5, 0.9)
+    model_y = compute_model_y(state_array, trace_array, E_array, 0.5, 0.9)
+    model_z = compute_model_z(state_array, trace_array, E_array, 0.5, 0.9)
+    model_roll = compute_model_roll(state_array, trace_array, E_array, 0.5, 0.9)
+    model_pitch = compute_model_pitch(state_array, trace_array, E_array, 0.5, 0.9) 
+    model_yaw = compute_model_yaw(state_array, trace_array, E_array, 0.5, 0.9)
     # model_x = {
     #     'dim': 'x',
     #     'coef_center':[0,1,0,0],
@@ -61,6 +61,15 @@ if __name__ == "__main__":
         data = pickle.load(f)
 
     model_x, model_y, model_z = get_all_models(data)
+    with open(os.path.join(script_dir, './models/model_x2.json'), 'w+') as f:
+        json.dump(model_x, f)
+
+    with open(os.path.join(script_dir, './models/model_y2.json'), 'w+') as f:
+        json.dump(model_y, f)
+
+    with open(os.path.join(script_dir, './models/model_z2.json'), 'w+') as f:
+        json.dump(model_z, f)
+    
     with open(os.path.join(script_dir, './models/model_x2.json'), 'w+') as f:
         json.dump(model_x, f)
 
