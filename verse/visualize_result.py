@@ -19,16 +19,16 @@ def create_box(box):
     rotationx = box[8]
 
     # Create a bounding box outline if x,y,z is center point
-    bounding_box = np.array([
-        [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
-        [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
-        [-h/2, -h/2, -h/2, -h/2, h/2, h/2, h/2, h/2]])
+    # bounding_box = np.array([
+    #     [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
+    #     [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
+    #     [-h/2, -h/2, -h/2, -h/2, h/2, h/2, h/2, h/2]])
     
     # Create a bounding box outline if x,y,z is rear center point
-    # bounding_box = np.array([
-    #             [l,l,0,0,l,l,0,0],                      
-    #             [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2],          
-    #             [0,0,0,0,h,h,h,h]])                        
+    bounding_box = np.array([
+                [l,l,0,0,l,l,0,0],                      
+                [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2],          
+                [0,0,0,0,h,h,h,h]])                        
 
     rotation_matrixZ = np.array([
         [np.cos(rotationz), -np.sin(rotationz), 0.0],
@@ -57,10 +57,30 @@ def create_box(box):
     return corner_box.transpose()
 
 
+def get_complement(E):
+    e1_range =  np.round(np.arange(0.0, 1.0, 0.1),2)
+    e2_range = np.round(np.arange(-1.0, 0.0, 0.1),2) 
+    E = np.round(E, 2)
+    E_comp = []
+    for e1 in e1_range:
+        for e2 in e2_range:
+            notin = True 
+            for e in E:
+                if e1==e[0,0] and e2==e[0,1]:
+                    notin = False 
+                    break
+            if notin:
+                E_comp.append(np.array([[e1, e2], [e1+0.1, e2+0.1]]))
+            
+    return np.array(E_comp)
+
+
 if __name__ == "__main__":
     # Visualize environment and reachable set 
     with open(os.path.join(script_dir, 'exp2_safe.pickle'), 'rb') as f: 
         M, E, C_list, reachtube = pickle.load(f)
+
+    # E = get_complement(E)
 
     # Load the .ply file
     pc_fn = os.path.join(script_dir, 'point_cloud.ply')
@@ -261,6 +281,49 @@ if __name__ == "__main__":
 
     object_list.append(trajectory)
 
+    gates = []
+    lines = [[0, 1], [1, 2], [2, 3], [0, 3],
+        [4, 5], [5, 6], [6, 7], [4, 7],
+        [0, 4], [1, 5], [2, 6], [3, 7]]
+    colors = [[1, 0, 0] for _ in range(len(lines))]
+
+    #tall gate
+    thick = 0.00773333333
+    box1 = [ 0.21712405261875897, thick, 4*thick,-0.25149308486535815 - 2*thick,0.46387092563230314,0.09094586224338311,0.26233977679,0,np.pi/2]
+    box2 = [ 0.21712405261875897, thick, 4*thick,-0.25149308486535815 - 2*thick,0.46387092563230314,-0.024983470674528035+thick/2,0.26233977679,0,np.pi/2]
+
+    box3 = [ 0.1101544437, thick, 4*thick,-0.25149308486535815 - 2*thick,0.46387092563230314 - thick/2 ,-0.024983470674528035,0.26233977679,0,0]
+    box4 = [ 0.1101544437, thick, 4*thick,-0.19808080788846066 - 2*thick,0.26428369431566606 - thick/2,-0.024983470674528035,0.26233977679,0,0]
+
+    #medium
+    box5 = [ 0.2021053147452305 , thick, 4*thick,0.2669555333432666 ,0.01408847925605405 -2*.00773333333,-0.08171296987496904,1.44841104579,0,np.pi/2]
+    box6 = [ 0.2021053147452305 , thick, 4*thick,0.2669555333432666 ,0.01408847925605405 -2*.00773333333,0.030049008568264826,1.44841104579,0,np.pi/2]
+
+    box7 = [ 0.1101544437, thick, 4*thick ,0.2669555333432666,0.01408847925605405 - 2*thick,-0.08171296987496904 - thick/2,1.44841104579,0,0]
+    box8 = [ 0.1101544437, thick, 4*thick ,0.4675032317493031,-0.011321409447605858 - 2*thick,-0.08171296987496904 - thick/2,1.44841104579,0,0]
+
+    #low 
+    box9 = [ 0.20317961255816389, thick, 4*thick,-0.14721761805015585  - 2*thick,-0.29452483706543536,-0.015179228897947927 -thick/2,-0.47054125679,0,np.pi/2]
+    box10 = [ 0.20317961255816389, thick, 4*thick,-0.14721761805015585  - 2*thick,-0.29452483706543536,-0.12533367259903994 - thick/2,-0.47054125679,0,np.pi/2]
+
+    box11 = [ 0.1101544437+thick, thick, 4*thick,-0.14721761805015585  - 2*thick,-0.29452483706543536,-0.12533367259903994- thick ,-0.47054125679,0,0]
+    box12 = [ 0.1101544437+thick, thick, 4*thick,-0.23932456011062586  - 1.5*thick,-0.4756277530650261+thick,-0.12533367259903994- thick ,-0.47054125679,0,0]
+
+
+    boxes = [box1, box2,box3,box4,box5,box6,box7,box8,box9,box10,box11,box12]
+    for i in boxes:
+        line_set = o3d.geometry.LineSet()
+
+        boxes3d_pts = create_box(i)
+        
+        line_set.points = o3d.utility.Vector3dVector(boxes3d_pts)
+        line_set.lines = o3d.utility.Vector2iVector(lines)
+        line_set.colors = o3d.utility.Vector3dVector(colors)
+        
+        gates.append(line_set)
+
+    object_list += gates
+
     vis = o3d.visualization.Visualizer()
     vis.create_window()
     for obj in object_list:
@@ -324,15 +387,16 @@ if __name__ == "__main__":
 
     # Apply the mask to make some pixels transparent
     rgba_image[mask[0], mask[1], :3] = 1  # Set alpha to 0 (transparent) for masked pixels
+    rgba_image = rgba_image[0:5, 5:]
     plt.imshow(rgba_image)
 
     # o3d.visualization.draw_geometries(object_list, window_name="Point Cloud with Axes", width=800, height=600)
     
     # ax = plt.gca()
-    # ax.set_xticks(np.round(np.arange(0,12,2)-0.5,1))
-    # ax.set_yticks(np.round(np.arange(0,12,2)-0.5,1))
-    # ax.set_xticklabels(np.round(np.arange(-1.0, 0.05, 0.2),2), fontsize=14)
-    # ax.set_yticklabels(np.round(np.arange(0, 1.05, 0.2),2), fontsize=14)
+    # ax.set_xticks(np.round(np.arange(0,6,2)-0.5,1))
+    # ax.set_yticks(np.round(np.arange(0,6,2)-0.5,1))
+    # ax.set_xticklabels(np.round(np.arange(-0.5, 0.05, 0.2),2), fontsize=14)
+    # ax.set_yticklabels(np.round(np.arange(0, 0.55, 0.2),2), fontsize=14)
     # plt.xlabel('Ambient light intensity', fontsize=16)
     # plt.ylabel('Fog level', fontsize=16)
     # # plt.xticks(list(range(0,14,2)), np.round(np.arange(-0.05,0.6,0.1),2))

@@ -715,6 +715,11 @@ if __name__ == "__main__":
 
     E = partitionE(E)
 
+    E = np.array([[
+        [0, -0.1],
+        [0.1, 0]
+    ]])
+
     fn = os.path.join(script_dir, './exp2_train4.pickle')
     with open(fn, 'rb') as f:
         data = pickle.load(f)
@@ -744,7 +749,7 @@ if __name__ == "__main__":
     # res, C_list, reachtube = compute_and_check(X_0, M, None,0, computation_steps, C_compute_step, C_num)
     M, E, Xc, C_list, reachtube = findM(X_0, E, None, data)
     # print(C_list)
-    with open(os.path.join(script_dir, 'exp2_safe.pickle'), 'wb+') as f: 
+    with open(os.path.join(script_dir, 'exp2_safe_small.pickle'), 'wb+') as f: 
         pickle.dump((M, E, C_list, reachtube), f)
 
     # Load the .ply file

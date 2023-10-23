@@ -235,17 +235,30 @@ def sample_environmental_parameters(E):
     e = np.random.uniform(E[Ep, 0,:], E[Ep,1,:])
     return e
 
+def get_complement(E):
+    e1_range =  np.round(np.arange(0.0, 1.0, 0.1),2)
+    e2_range = np.round(np.arange(-1.0, 0.0, 0.1),2) 
+    E = np.round(E, 2)
+    E_comp = []
+    for e1 in e1_range:
+        for e2 in e2_range:
+            notin = True 
+            for e in E:
+                if e1==e[0,0] and e2==e[0,1]:
+                    notin = False 
+                    break
+            if notin:
+                E_comp.append(np.array([[e1, e2], [e1+0.1, e2+0.1]]))
+            
+    return np.array(E_comp)
+
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.realpath(__file__))
     with open(os.path.join(script_dir, './verse/exp2_safe.pickle'), 'rb') as f:
         M, E, _, _ = pickle.load(f)
 
-    E = np.array([
-        [
-            [0, -0.1],
-            [0.1, 0]
-        ]
-    ])
+    # E = get_complement(E)
+
     fn = os.path.join(script_dir, './camera_path.json')
     with open(fn, 'r') as f:
         data = json.load(f)
@@ -261,6 +274,12 @@ if __name__ == "__main__":
     
     # for change_env_fog in range(0,10,1):
     #     for change_env_dark in range(0,10,1):
+
+    # E = np.array([[
+    #     [0, -0.1],
+    #     [0.1, 0]
+    # ]])
+
     traj_list = []
     estimate_traj_list = []
     init_list = []
@@ -338,9 +357,9 @@ if __name__ == "__main__":
 
         traj_list.append(gt)
         estimate_traj_list.append(est)
-        with open(os.path.join(script_dir, './verse/vcs_sim_exp1_test.pickle'),'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_sim_exp1_test2.pickle'),'wb+') as f:
             pickle.dump(traj_list, f)
-        with open(os.path.join(script_dir, './verse/vcs_estimate_exp1_test.pickle'),'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_estimate_exp1_test2.pickle'),'wb+') as f:
             pickle.dump(estimate_traj_list, f)
-        with open(os.path.join(script_dir, './verse/vcs_init_exp1_test.pickle'), 'wb+') as f:
+        with open(os.path.join(script_dir, './verse/vcs_init_exp1_test2.pickle'), 'wb+') as f:
             pickle.dump(init_list, f)
